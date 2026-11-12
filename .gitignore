@@ -1,0 +1,100 @@
+# Q-MAP — repository ignore rules
+# The live market-data root must be outside this repository.
+# Only the 12 explicitly approved sample fixtures below may be committed.
+
+# Python bytecode and local environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+ENV/
+
+# Test, type-checker and formatter caches / outputs
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+
+# Build and packaging outputs
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Local IDE and operating-system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Secrets and local credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local databases, journals and database sidecars
+*.duckdb
+*.duckdb.wal
+*.sqlite
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
+*.wal
+
+# Local data, backup and generated-output directories
+/QMAP_DATA/
+/market/
+/staging/
+/held/
+/catalogue/
+/backups/
+/logs/
+/reports/
+/outputs/
+/scanner_outputs/
+/run_outputs/
+/evidence_exports/
+
+# Generated, temporary and archive files
+*.log
+*.tmp
+*.temp
+*.bak
+*.backup
+*.swp
+*.swo
+*~
+*.zip
+*.7z
+*.rar
+
+# Market-data file types are ignored by default.
+# Re-include only the exact Owner-approved sample fixtures.
+*.parquet
+*.csv
+*.txt
+!requirements.txt
+!tests/fixtures/source_samples/Nifty_1min_09Jan25-06Nov26.parquet
+!tests/fixtures/source_samples/NSE_BANKNIFTY, 1_1min 17Aug26-11Nov26.parquet
+!tests/fixtures/source_samples/NSE_BANKNIFTY_1.csv
+!tests/fixtures/source_samples/CONCOR.txt
+!tests/fixtures/source_samples/CONCOR_daily 26Nov98-06Nov26.parquet
+!tests/fixtures/source_samples/INFY_daily 02Jan98-06Nov26.parquet
+!tests/fixtures/source_samples/Nifty IT.txt
+!tests/fixtures/source_samples/Nifty_3min_02Jan23-30Oct26.parquet
+!tests/fixtures/source_samples/Nifty_5min_02Jan23-30Oct26.parquet
+!tests/fixtures/source_samples/Nifty_15min_02Jan23-30Oct26.parquet
+!tests/fixtures/source_samples/Nifty_daily_02Jan23-30Oct26.parquet
+!tests/fixtures/source_samples/Nifty_monthly_02Jan23-30Oct26.parquet
