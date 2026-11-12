@@ -52,7 +52,7 @@ Q-Map-New/
 └── tests/
     └── fixtures/
         └── source_samples/
-            └── [12 approved sample files]/
+            └── [12 approved sample files]
 ```
 
 The implementation, application and configuration folders, along with the root-level requirements.txt, will be created only when the relevant authorised milestone requires them. The sample fixture path shown above identifies the approved location; it does not authorise creating the folder or uploading the sample files before the relevant milestone. Do not create empty or speculative folders merely to fill out a software-project layout.
