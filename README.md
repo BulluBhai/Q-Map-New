@@ -55,7 +55,7 @@ Q-Map-New/
             └── [12 approved sample files]
 ```
 
-The implementation, application and configuration folders, along with the root-level requirements.txt, will be created only when the relevant authorised milestone requires them. The sample fixture path shown above identifies the approved location; it does not authorise creating the folder or uploading the sample files before the relevant milestone. Do not create empty or speculative folders merely to fill out a software-project layout.
+The implementation, application and configuration folders, along with the root-level requirements.txt, will be created only when the relevant authorised milestone requires them. The Project Owner has approved the 12 sample files for public distribution and test use. They may be committed under tests/fixtures/source_samples/, preserving their original filenames and contents, when the milestone requiring these fixtures begins. This approval applies only to the distribution of the sample files; it does not authorise production implementation or change any milestone start conditions. Do not create empty or speculative folders merely to fill out a software-project layout.
 
 ### `docs/blueprints/` — what the project is and its technical direction
 
