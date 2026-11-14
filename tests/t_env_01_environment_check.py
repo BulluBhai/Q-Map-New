@@ -1,4 +1,4 @@
-"""T-ENV-01 — Environment check for Gate 0 (run from IDLE with F5).
+""""T-ENV-01 — Environment check for Gate 0 (run from IDLE with F5).
 
 Prints the Python and third-party package versions, compares them with the
 exact pins in requirements.txt, checks that tkinter is importable, and writes
@@ -54,10 +54,11 @@ def run_check():
     # Evidence timestamps use IST wall-clock time with no conversion (TS-01).
     record("checked_at: %s" % now.strftime("%Y-%m-%d %H:%M:%S"))
     record("computer: %s (%s)" % (platform.node(), platform.platform()))
-    record("python_version: %s" % platform.python_version())
+    python_version = platform.python_version()
+    python_matches = python_version == EXPECTED_PYTHON
+    record("python_version: %s" % python_version)
     record("python_expected: %s" % EXPECTED_PYTHON)
-    record("python_match: %s"
-           % ("TRUE" if platform.python_version() == EXPECTED_PYTHON else "FALSE"))
+    record("python_match: %s" % ("TRUE" if python_matches else "FALSE"))
 
     try:
         pins = read_pins(REQUIREMENTS_PATH)
@@ -66,7 +67,8 @@ def run_check():
         pins = {}
         record("requirements_txt: MISSING (%s)" % exc)
 
-    all_match = True
+    # Gate 0 requires the exact Python version as well as matching packages.
+    all_match = python_matches
     for package_name in REQUIRED_PACKAGES:
         try:
             module = __import__(package_name)
@@ -88,17 +90,18 @@ def run_check():
         record("tkinter_installed: IMPORT FAILED (%s)" % exc)
         all_match = False
 
-    record("all_packages_match_requirements: %s" % ("TRUE" if all_match else "FALSE"))
+    record("all_environment_checks_match: %s" % ("TRUE" if all_match else "FALSE"))
     if not all_match:
-        record("note: versions differ from requirements.txt - this environment"
-               " is untested and its runs are not milestone evidence (G-15)")
+        record("note: Python or package versions differ from the required environment, "
+               "or tkinter is unavailable - this environment is untested and its "
+               "runs are not milestone evidence (G-15)")
 
     evidence_name = "EV12_environment_%s.txt" % timestamp_suffix(now)
     evidence_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                  evidence_name)
     with open(evidence_path, "w", encoding="utf-8") as handle:
-        handle.write("\n".join(lines) + "\n")
-    print("\nEvidence written to: %s" % evidence_path)
+        handle.write("\\n".join(lines) + "\\n")
+    print("\\nEvidence written to: %s" % evidence_path)
     print("Done. Please confirm this printout came from your own PC.")
 
 
