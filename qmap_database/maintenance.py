@@ -151,9 +151,7 @@ def run_initial_load(data_root_path, selected_files, calendar_file=None,
     # on the very first load there is nothing to back up yet.
     backup_path = None
     if os.path.exists(data_root.catalogue_path):
-        backup_path = data_root.folder(
-            "backups", "catalogue", "qmap_catalogue_%s.duckdb" % suffix)
-        shutil.copy2(data_root.catalogue_path, backup_path)
+        backup_path = storage.create_catalogue_backup(data_root)
         logger.info("catalogue backed up to %s", backup_path)
 
     catalogue = Catalogue(data_root.catalogue_path)
@@ -960,9 +958,7 @@ def run_update(data_root_path, selected_folders, live_log=None, progress=None,
     if not os.path.exists(data_root.catalogue_path):
         raise RuntimeError("No Q-MAP catalogue exists at this data root yet. "
                            "Please run Initial load first.")
-    backup_path = data_root.folder("backups", "catalogue",
-                                   "qmap_catalogue_%s.duckdb" % suffix)
-    shutil.copy2(data_root.catalogue_path, backup_path)
+    backup_path = storage.create_catalogue_backup(data_root)
     logger.info("catalogue backed up to %s", backup_path)
 
     catalogue = Catalogue(data_root.catalogue_path)
@@ -1253,9 +1249,7 @@ def approve_held_revision(data_root_path, instrument_id, live_log=None):
     data_root = storage.DataRoot(data_root_path)
     log_path = data_root.folder("logs", "qmap_data_manager_%s.log" % suffix)
     logger = _make_logger(log_path, live_log)
-    backup_path = data_root.folder("backups", "catalogue",
-                                   "qmap_catalogue_%s.duckdb" % suffix)
-    shutil.copy2(data_root.catalogue_path, backup_path)
+    backup_path = storage.create_catalogue_backup(data_root)
     catalogue = Catalogue(data_root.catalogue_path)
     try:
         held = catalogue.held_import(instrument_id)
@@ -1378,9 +1372,7 @@ def run_revalidate(data_root_path, instrument_ids=None, live_log=None):
     data_root = storage.DataRoot(data_root_path)
     log_path = data_root.folder("logs", "qmap_data_manager_%s.log" % suffix)
     logger = _make_logger(log_path, live_log)
-    backup_path = data_root.folder("backups", "catalogue",
-                                   "qmap_catalogue_%s.duckdb" % suffix)
-    shutil.copy2(data_root.catalogue_path, backup_path)
+    backup_path = storage.create_catalogue_backup(data_root)
     catalogue = Catalogue(data_root.catalogue_path)
     try:
         run_id = catalogue.start_run("REVALIDATE", log_path, backup_path)
@@ -1491,10 +1483,7 @@ def verify_continuity_issue(data_root_path, issue_id, owner_note):
     if not owner_note or not owner_note.strip():
         raise ValueError("A verification note (your basis) is required.")
     data_root = storage.DataRoot(data_root_path)
-    backup_path = data_root.folder("backups", "catalogue",
-                                   "qmap_catalogue_%s.duckdb"
-                                   % timestamp_suffix())
-    shutil.copy2(data_root.catalogue_path, backup_path)
+    backup_path = storage.create_catalogue_backup(data_root)
     catalogue = Catalogue(data_root.catalogue_path)
     try:
         open_ids = {row[0] for row in

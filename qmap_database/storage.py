@@ -10,7 +10,9 @@ modified in place; readers resolve files only through the catalogue pointer.
 
 # --- Imports -----------------------------------------------------------------
 import os
+import re
 import shutil
+from datetime import datetime
 
 import pandas as pd
 import pyarrow as pa
@@ -214,6 +216,52 @@ def discard_staging(data_root, dataset_id, file_safe_name, generation):
             pass
 
 
+# --- Catalogue backups (02 section 10) -----------------------------------------------
+CATALOGUE_BACKUP_PREFIX = "qmap_catalogue_"
+_BACKUP_NAME = re.compile(r"^qmap_catalogue_(\d{2}_[A-Za-z]{3}_\d{2}_\d{6})"
+                          r"(?:_(\d+))?\.duckdb$")
+
+
+def create_catalogue_backup(data_root, now=None):
+    """Copy the live catalogue to backups\\catalogue\\ under a name that is
+    never reused: qmap_catalogue_<dd_mmm_yy_hhmmss>.duckdb, or with a _002,
+    _003... sequence when a backup from the same second already exists, so a
+    backup is never overwritten. Returns the backup path."""
+    folder = data_root.folder("backups", "catalogue")
+    os.makedirs(folder, exist_ok=True)
+    stem = CATALOGUE_BACKUP_PREFIX + (now or datetime.now()).strftime(
+        "%d_%b_%y_%H%M%S")
+    path = os.path.join(folder, stem + ".duckdb")
+    sequence = 1
+    while os.path.exists(path):
+        sequence += 1
+        path = os.path.join(folder, "%s_%03d.duckdb" % (stem, sequence))
+    shutil.copy2(data_root.catalogue_path, path)
+    return path
+
+
+def catalogue_backup_sort_key(name):
+    """Chronological order of backup names. The dd_mmm_yy date in the name
+    does not sort correctly as text across days or months, so the time is
+    parsed; a name that cannot be parsed sorts first (treated as oldest)."""
+    match = _BACKUP_NAME.match(name)
+    if match:
+        try:
+            moment = datetime.strptime(match.group(1), "%d_%b_%y_%H%M%S")
+            return (1, moment, int(match.group(2) or 1), name)
+        except ValueError:
+            pass
+    return (0, datetime.min, 0, name)
+
+
+def latest_catalogue_backups(backup_folder, count):
+    """The newest `count` backup file names, oldest first."""
+    if not os.path.isdir(backup_folder):
+        return []
+    names = sorted(os.listdir(backup_folder), key=catalogue_backup_sort_key)
+    return names[-count:] if count else []
+
+
 # --- Main logic: retention and restore ------------------------------------------------
 def prune_generations(data_root, catalogue, backup_folder, keep_backups=10):
     """Step 5 of the commit protocol: delete generations older than the
@@ -235,9 +283,7 @@ def prune_generations(data_root, catalogue, backup_folder, keep_backups=10):
             keep.add(instrument["previous_generation"])
         needed[instrument["instrument_id"]] = keep
 
-    backups = []
-    if os.path.isdir(backup_folder):
-        backups = sorted(os.listdir(backup_folder))[-keep_backups:]
+    backups = latest_catalogue_backups(backup_folder, keep_backups)
     for backup_name in backups:
         backup_path = os.path.join(backup_folder, backup_name)
         try:
