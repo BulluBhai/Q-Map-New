@@ -23,7 +23,7 @@ The Project Owner has approved Design Package v1.10. Approval of a design is **n
 | #9 | `001e03a5ee1a03527b595876b2d4f0beaee92e9c` | G-01 read-only Stock Universe Inventory tool |
 | #11 | `6f3d0c3cdf861f2ad5129dcb14202c6df111b80e` | Owner's User Guide v1.0 (`docs/user_guides/`) |
 
-Last full test run: 181 tests, 0 failures, 0 errors, 0 skipped, on **Linux** with Python 3.12.10 and the exact pins (the PR #9 branch, tree identical to `main` after PR #9). This is development evidence only. **No test has been run on Windows yet.**
+Full test runs: 181 tests, 0 failures, 0 errors, 0 skipped on the PR #9 branch (tree identical to `main` after PR #9), and 181 tests with 1 intermittent failure (T-MNT-10, see the open defect below) on `main` at `6f3d0c3`. Both were on **Linux** with Python 3.12.10 and the exact pins. This is development evidence only. **No test has been run on Windows yet.**
 
 ### Outstanding
 
@@ -32,6 +32,7 @@ Last full test run: 181 tests, 0 failures, 0 errors, 0 skipped, on **Linux** wit
 - **M4** is not implemented and not approved for development (needs G-11). **M5** is not implemented (needs the approved scoring profile and weights, G-10).
 - ORB backtesting is future work. Broker connectivity, automatic trading, cloud synchronisation and AI interpretation are not available and must not be represented as available.
 - Owner actions: Windows testing, T-ENV-01/EV-12, verification of each ±15% occurrence (G-03), CAS and special-session confirmations.
+- **Open defect:** catalogue backup names (`qmap_catalogue_<dd_mmm_yy_hhmmss>.duckdb`) collide when two maintenance runs start within the same second, so an earlier backup is overwritten. This makes T-MNT-10 fail intermittently (seen on `main` at `6f3d0c3`, Linux: 181 run, 1 failure). It needs a separate, focused fix PR; do not weaken the test.
 
 ## 3. Read the authoritative documents before acting
 
