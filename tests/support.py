@@ -120,10 +120,19 @@ def read_raw(path):
 
 
 def canonical_frame(root, dataset_id, file_safe_name):
-    """All canonical rows of an instrument's active generation."""
+    """All canonical rows of an instrument's ACTIVE generation (resolved
+    through the catalogue pointer, exactly as a reader must)."""
     import glob
     import pandas as pd
+    from qmap_database.catalogue import Catalogue
+    from qmap_database.storage import DataRoot
+    catalogue = Catalogue(DataRoot(root).catalogue_path, read_only=True)
+    try:
+        active = {i["file_safe_name"]: i["active_generation"]
+                  for i in catalogue.instruments()}[file_safe_name]
+    finally:
+        catalogue.close()
     pattern = os.path.join(root, "market", dataset_id, file_safe_name,
-                           "gen_*", "*.parquet")
+                           "gen_%06d" % active, "*.parquet")
     files = sorted(glob.glob(pattern))
     return pd.concat([pd.read_parquet(f) for f in files], ignore_index=True)

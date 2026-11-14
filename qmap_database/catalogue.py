@@ -7,7 +7,7 @@ all-or-nothing runs inside one transaction; generation activation (section
 """
 
 # --- Imports -----------------------------------------------------------------
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import duckdb
 
@@ -377,9 +377,13 @@ class Catalogue:
 
     # --- generation activation (the single commit point, 02 section 9.4) -----------
     def activate_generation(self, instrument_id, generation, data_file_rows,
-                            coverage_row, day_profile_rows, run_id):
+                            coverage_row, day_profile_rows, run_id,
+                            in_transaction_hook=None):
         """One catalogue transaction: data_file rows, coverage, day profiles
-        and the generation pointer switch, all or nothing."""
+        and the generation pointer switch, all or nothing.
+
+        `in_transaction_hook` is the T-MNT-06c failure-injection point: it is
+        called inside the transaction, just before the commit."""
         self.begin()
         try:
             for f in data_file_rows:
@@ -423,6 +427,8 @@ class Catalogue:
                 "UPDATE instrument SET previous_generation = "
                 "active_generation, active_generation = ? WHERE "
                 "instrument_id = ?", [generation, instrument_id])
+            if in_transaction_hook is not None:
+                in_transaction_hook()
             self.commit()
         except Exception:
             self.rollback()
@@ -569,3 +575,77 @@ class Catalogue:
             "import_log WHERE action IN ('NEW', 'APPEND', "
             "'APPLIED_APPROVED_REVISION', 'DUPLICATE_SOURCE', "
             "'SKIPPED_UNCHANGED')").fetchall()
+
+    # --- M1b: fingerprint history, held revisions, confirmations -----------------
+    def sha_history(self, instrument_id):
+        """Fingerprints by their last recorded outcome for one instrument.
+        A FAILED fingerprint is deliberately absent from 'known': re-offering
+        the same bad file must fail again, never SKIPPED_UNCHANGED (T-MNT-17a)."""
+        rows = self.con.execute(
+            "SELECT source_sha256, action FROM import_log WHERE "
+            "instrument_id = ? AND source_sha256 IS NOT NULL "
+            "ORDER BY import_id", [instrument_id]).fetchall()
+        known, held, rejected = set(), set(), set()
+        for sha, action in rows:
+            if action in ("NEW", "APPEND", "APPLIED_APPROVED_REVISION",
+                          "DUPLICATE_SOURCE", "SKIPPED_UNCHANGED"):
+                known.add(sha)
+            elif action == "HELD_REVISION":
+                held.add(sha)
+            elif action == "REJECTED_REVISION":
+                rejected.add(sha)
+        return {"known": known, "held": held, "rejected": rejected}
+
+    def held_revisions(self):
+        """Held revisions awaiting the Owner, from the open HELD_REVISION
+        issues: (issue_id, instrument_id, description, evidence)."""
+        return self.con.execute(
+            "SELECT issue_id, instrument_id, description, evidence FROM "
+            "data_issue WHERE check_code = 'V-REV-01' AND status = 'OPEN' "
+            "ORDER BY issue_id").fetchall()
+
+    def held_import(self, instrument_id):
+        """The most recent held import for an instrument:
+        (import_id, source_path, source_sha256), or None."""
+        row = self.con.execute(
+            "SELECT import_id, source_path, source_sha256 FROM import_log "
+            "WHERE instrument_id = ? AND action = 'HELD_REVISION' "
+            "ORDER BY import_id DESC LIMIT 1", [instrument_id]).fetchone()
+        return row
+
+    def resolve_issues(self, instrument_id, check_code, note):
+        """Close an instrument's open issues of one check (e.g. the held
+        revision after the Owner decides, or V-SES-01 after confirmation)."""
+        self.con.execute(
+            "UPDATE data_issue SET status = ?, user_note = ? WHERE "
+            "instrument_id = ? AND check_code = ? AND status = 'OPEN'",
+            [ISSUE_RESOLVED, note, instrument_id, check_code])
+
+    def record_session_confirmation(self, instrument_id, value,
+                                    effective_from, effective_to, evidence,
+                                    confirmed_at):
+        """Store the Owner's answer to a confirmation list as an
+        instrument_rule (SESSION_PATTERN, OWNER_CONFIRMED) - 02 section 6.2."""
+        self.add_instrument_rule(instrument_id, "SESSION_PATTERN", value,
+                                 effective_from, effective_to, False,
+                                 "OWNER_CONFIRMED", evidence, confirmed_at)
+
+    def session_confirmations(self, instrument_id):
+        """The Owner's per-day confirmations: {date: SessionConfirmation}."""
+        from . import session_rules as sr
+        rows = self.con.execute(
+            "SELECT value, effective_from, effective_to FROM instrument_rule "
+            "WHERE instrument_id = ? AND rule_type = 'SESSION_PATTERN' AND "
+            "source IN ('OWNER_CONFIRMED', 'OFFICIAL_REFERENCE') AND "
+            "value != 'CAS'", [instrument_id]).fetchall()
+        confirmations = {}
+        for value, effective_from, effective_to in rows:
+            confirmation = sr.decode_session_confirmation(value)
+            if confirmation is None or effective_from is None:
+                continue
+            day = effective_from
+            last = effective_to or effective_from
+            while day <= last:
+                confirmations[day] = confirmation
+                day += timedelta(days=1)
+        return confirmations

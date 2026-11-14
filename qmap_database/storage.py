@@ -116,7 +116,7 @@ def split_into_periods(records, intraday, file_safe_name):
 # --- Main logic: generation commit protocol ----------------------------------------
 def stage_and_validate_generation(data_root, dataset_id, instrument_id,
                                   file_safe_name, generation, records,
-                                  import_id, intraday):
+                                  import_id, intraday, after_stage_hook=None):
     """Steps 1 and 2 of the commit protocol: write every file of the new
     generation into staging, then read each one back and check it.
 
@@ -138,6 +138,10 @@ def stage_and_validate_generation(data_root, dataset_id, instrument_id,
                                   intraday)
         file_path = os.path.join(staging_folder, file_name)
         pq.write_table(table, file_path)
+        if after_stage_hook is not None:
+            # Failure-injection point for T-MNT-06a and T-MNT-17b: the hook
+            # may corrupt the staged file or simulate an interruption.
+            after_stage_hook(file_path, period)
 
         # Step 2: validate by reading back what was actually written.
         written = pd.read_parquet(file_path)
@@ -198,6 +202,94 @@ def discard_staging(data_root, dataset_id, file_safe_name, generation):
                                                   generation)
     if os.path.exists(staging_folder):
         shutil.rmtree(staging_folder)
+    # Remove the now-empty parent folders so a discarded build leaves no
+    # trace under staging\ at all.
+    for parent in (os.path.dirname(staging_folder),
+                   os.path.dirname(os.path.dirname(staging_folder))):
+        try:
+            if os.path.isdir(parent) and not os.listdir(parent) \
+                    and os.path.basename(parent) != "staging":
+                os.rmdir(parent)
+        except OSError:
+            pass
+
+
+# --- Main logic: retention and restore ------------------------------------------------
+def prune_generations(data_root, catalogue, backup_folder, keep_backups=10):
+    """Step 5 of the commit protocol: delete generations older than the
+    retention limit, only after successful activation (TC-15).
+
+    Each instrument keeps its active generation, its previous generation, and
+    every generation still referenced as active by one of the last
+    `keep_backups` catalogue backups, so any of those backups can be restored.
+    An unreadable backup keeps everything (conservative). Returns messages."""
+    import duckdb
+
+    messages = []
+    needed = {}
+    for instrument in catalogue.instruments():
+        keep = set()
+        if instrument["active_generation"] is not None:
+            keep.add(instrument["active_generation"])
+        if instrument["previous_generation"] is not None:
+            keep.add(instrument["previous_generation"])
+        needed[instrument["instrument_id"]] = keep
+
+    backups = []
+    if os.path.isdir(backup_folder):
+        backups = sorted(os.listdir(backup_folder))[-keep_backups:]
+    for backup_name in backups:
+        backup_path = os.path.join(backup_folder, backup_name)
+        try:
+            con = duckdb.connect(backup_path, read_only=True)
+            try:
+                for instrument_id, generation in con.execute(
+                        "SELECT instrument_id, active_generation FROM "
+                        "instrument WHERE active_generation IS NOT NULL"
+                ).fetchall():
+                    needed.setdefault(instrument_id, set()).add(generation)
+            finally:
+                con.close()
+        except Exception:
+            # A backup that cannot be read keeps every generation safe.
+            return ["prune skipped: backup %s could not be read"
+                    % backup_name]
+
+    by_safe_name = {(i["dataset_id"], i["file_safe_name"]):
+                    i["instrument_id"] for i in catalogue.instruments()}
+    market_root = data_root.folder("market")
+    if not os.path.isdir(market_root):
+        return messages
+    for dataset_id in os.listdir(market_root):
+        dataset_folder = os.path.join(market_root, dataset_id)
+        if not os.path.isdir(dataset_folder):
+            continue
+        for safe_name in os.listdir(dataset_folder):
+            instrument_id = by_safe_name.get((dataset_id, safe_name))
+            if instrument_id is None:
+                continue
+            keep = needed.get(instrument_id, set())
+            instrument_folder = os.path.join(dataset_folder, safe_name)
+            for gen_name in os.listdir(instrument_folder):
+                if not gen_name.startswith("gen_"):
+                    continue
+                generation = int(gen_name.split("_")[1])
+                if generation not in keep:
+                    shutil.rmtree(os.path.join(instrument_folder, gen_name),
+                                  ignore_errors=True)
+                    messages.append("pruned %s/%s/%s (not needed by the last "
+                                    "%d backups)" % (dataset_id, safe_name,
+                                                     gen_name, keep_backups))
+    return messages
+
+
+def restore_catalogue_backup(data_root, backup_path):
+    """Restore step of 02 section 10: copy the chosen catalogue backup over
+    the live catalogue. The caller must have closed every Q-MAP connection
+    first, then runs Check integrity."""
+    if not os.path.exists(backup_path):
+        raise FileNotFoundError("catalogue backup not found: %s" % backup_path)
+    shutil.copy2(backup_path, data_root.catalogue_path)
 
 
 # --- Main logic: recovery and integrity ---------------------------------------------

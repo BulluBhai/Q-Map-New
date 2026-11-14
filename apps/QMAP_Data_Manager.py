@@ -1,13 +1,14 @@
-"""Q-MAP Data Manager (M1a: Initial load).
+"""Q-MAP Data Manager (M1a initial load + M1b maintenance).
 
 Open this file in IDLE on the Owner's PC and press F5. Pick the data root
-folder and the source files, then run the Initial load. Progress, a live log,
-the validation report location, and the CAS and unrecognised-day confirmation
-lists are shown. Only this program writes to the Q-MAP database.
+folder and the source files, then run the Initial load. For maintenance, pick
+the folders holding changed source files and run Update: unchanged files are
+skipped, new rows are appended, and every change to stored history is HELD
+for your approve/reject decision. The confirmation list records your answers
+on CAS days and unrecognised sessions and re-validates the data. Check
+integrity and Restore follow document 02 section 10.
 
-Recording CAS and special-session confirmations (which re-validates data into
-a new generation) arrives with M1b; this version shows the lists the Owner
-will confirm.
+Only this program writes to the Q-MAP database.
 """
 
 # --- Imports -----------------------------------------------------------------
@@ -19,7 +20,7 @@ import traceback
 from datetime import datetime
 
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                           os.pardir))
@@ -28,7 +29,10 @@ if _REPO_ROOT not in sys.path:
 
 from qmap_database import settings as settings_mod          # noqa: E402
 from qmap_database.errors import DatabaseUnavailableError   # noqa: E402
-from qmap_database.maintenance import run_initial_load      # noqa: E402
+from qmap_database.maintenance import (                     # noqa: E402
+    approve_held_revision, confirm_cas_rule, confirm_special_session,
+    reject_held_revision, run_initial_load, run_integrity_check, run_update,
+    restore_from_backup)
 
 # --- Constants ---------------------------------------------------------------
 POLL_MILLISECONDS = 100
@@ -89,6 +93,7 @@ class DataManagerApp(tk.Tk):
         self._build_output_section(body)
         self._build_options_section(body)
         self._build_run_section(body)
+        self._build_maintenance_section(body)
         self._build_progress_section(body)
         self._build_log_section(body)
         self._build_confirmation_section(body)
@@ -181,15 +186,57 @@ class DataManagerApp(tk.Tk):
         self.log_text.pack(side="left", fill="both", expand=True)
         log_scroll.pack(side="right", fill="y")
 
+    def _build_maintenance_section(self, body):
+        frame = tk.LabelFrame(body, text="4. Maintenance (M1b)", padx=6,
+                              pady=4)
+        frame.pack(fill="x", padx=8, pady=2)
+        row = tk.Frame(frame)
+        row.pack(fill="x")
+        tk.Button(row, text="Add update folder...",
+                  command=self._add_update_folder).pack(side="left")
+        tk.Button(row, text="Clear folders",
+                  command=lambda: self.folder_list.delete(0, "end")).pack(
+            side="left", padx=4)
+        self.update_button = tk.Button(row, text="Run update",
+                                       font=("TkDefaultFont", 10, "bold"),
+                                       command=self._start_update)
+        self.update_button.pack(side="left", padx=12)
+        tk.Button(row, text="Check integrity",
+                  command=self._start_integrity_check).pack(side="left",
+                                                            padx=4)
+        tk.Button(row, text="Restore catalogue backup...",
+                  command=self._start_restore).pack(side="left", padx=4)
+        self.folder_list = tk.Listbox(frame, height=3, selectmode="extended")
+        self.folder_list.pack(fill="x", pady=(4, 0))
+        for folder in self.settings.get("last_source_folders", []):
+            if os.path.isdir(folder):
+                self.folder_list.insert("end", folder)
+        tk.Label(frame, anchor="w", fg="grey25",
+                 text="An Update examines only the folders listed here "
+                      "(G-09). Changes to stored history are HELD for your "
+                      "decision; nothing is applied automatically.").pack(
+            fill="x")
+
     def _build_confirmation_section(self, body):
         frame = tk.LabelFrame(
-            body, text="Sessions awaiting your confirmation "
-                       "(recording confirmations arrives with M1b)",
+            body, text="Awaiting your decision - sessions and held revisions",
             padx=6, pady=4)
         frame.pack(fill="both", padx=8, pady=(2, 8))
-        self.confirmation_text = tk.Text(frame, height=8, state="disabled",
-                                         wrap="word")
-        self.confirmation_text.pack(fill="both", expand=True)
+        self.pending_list = tk.Listbox(frame, height=6)
+        self.pending_list.pack(fill="both", expand=True)
+        self._pending_items = []
+        row = tk.Frame(frame)
+        row.pack(fill="x", pady=(4, 0))
+        tk.Button(row, text="Confirm selected...",
+                  command=self._confirm_selected).pack(side="left")
+        tk.Button(row, text="Approve held revision",
+                  command=lambda: self._decide_revision(True)).pack(
+            side="left", padx=4)
+        tk.Button(row, text="Reject held revision",
+                  command=lambda: self._decide_revision(False)).pack(
+            side="left")
+        tk.Button(row, text="Refresh list",
+                  command=self._refresh_pending).pack(side="right")
 
     # --- input handlers ------------------------------------------------------------
     def _add_files(self):
@@ -289,6 +336,8 @@ class DataManagerApp(tk.Tk):
                     self._set_status("%s  (%d of %d)" % (text, step, total))
                 elif kind == "done":
                     self._finish_run(payload)
+                elif kind == "action_done":
+                    self._finish_action(payload)
                 elif kind == "error":
                     self._fail_run(payload)
         except queue.Empty:
@@ -306,6 +355,7 @@ class DataManagerApp(tk.Tk):
             return
         self._run_started_at = None
         self.run_button.config(state="normal")
+        self.update_button.config(state="normal")
         self._set_status("Finished: %s - %s" % (result.status, result.summary))
         self._append_log("=== Finished: %s ===" % result.status)
         if result.report_path:
@@ -315,20 +365,50 @@ class DataManagerApp(tk.Tk):
                              "instruments):")
             for path in result.unrecognised_files:
                 self._append_log("  %s" % path)
-        self._show_confirmation_lists(result)
+        self._refresh_pending()
+
+    def _finish_action(self, outcome):
+        """Completion of an update, decision, confirmation, integrity check
+        or restore (anything run through _run_in_background)."""
+        if getattr(self, "_closing", False):
+            return
+        self._run_started_at = None
+        self.run_button.config(state="normal")
+        self.update_button.config(state="normal")
+        if hasattr(outcome, "status"):          # an UpdateResult
+            self._set_status("Finished: %s - %s" % (outcome.status,
+                                                    outcome.summary))
+            self._append_log("=== Finished: %s ===" % outcome.status)
+            if outcome.report_path:
+                self._append_log("Validation report: %s" % outcome.report_path)
+        elif isinstance(outcome, list):         # integrity / restore problems
+            if outcome:
+                self._set_status("Integrity problems found - see the log.")
+                for problem in outcome:
+                    self._append_log(problem)
+            else:
+                self._set_status("Done. Integrity check PASSED.")
+                self._append_log("Integrity check PASSED.")
+        else:
+            self._set_status("Done.")
+            self._append_log("=== Done ===")
+        self._refresh_pending()
 
     def _fail_run(self, message):
         if getattr(self, "_closing", False):
             return
         self._run_started_at = None
         self.run_button.config(state="normal")
+        self.update_button.config(state="normal")
         self._set_status("The run failed. See the log for details.")
         self._append_log(message)
         messagebox.showerror(WINDOW_TITLE, message.splitlines()[0])
 
-    def _show_confirmation_lists(self, result):
-        """The CAS-candidate and unrecognised-day lists (02 section 6.2)."""
-        lines = []
+    def _refresh_pending(self):
+        """The CAS-candidate, unrecognised-day and held-revision lists
+        awaiting the Owner (02 sections 6.2 and 9.3)."""
+        self.pending_list.delete(0, "end")
+        self._pending_items = []
         try:
             from qmap_database.catalogue import Catalogue
             from qmap_database.storage import DataRoot
@@ -337,27 +417,208 @@ class DataManagerApp(tk.Tk):
             try:
                 for (instrument_id, count, first, last) in \
                         catalogue.cas_confirmation_list():
-                    lines.append("%s: CAS shape on %d day(s) from %s to %s - "
-                                 "please confirm the CAS rule."
-                                 % (instrument_id, count,
-                                    first.strftime("%d %b %y"),
-                                    last.strftime("%d %b %y")))
+                    self._pending_items.append(("cas", instrument_id, None))
+                    self.pending_list.insert(
+                        "end", "%s: CAS shape on %d day(s) from %s to %s - "
+                               "confirm the CAS rule?"
+                               % (instrument_id, count,
+                                  first.strftime("%d %b %y"),
+                                  last.strftime("%d %b %y")))
                 for (instrument_id, day, first_record, last_candle, present,
                      missing) in catalogue.unrecognised_days():
-                    lines.append("%s %s: records %s-%s only (%s present). "
-                                 "Special session, or truncated data?"
-                                 % (instrument_id, day.strftime("%d %b %y"),
-                                    first_record, last_candle, present))
+                    self._pending_items.append(("day", instrument_id, day))
+                    self.pending_list.insert(
+                        "end", "%s %s: records %s-%s only (%s present). "
+                               "Special session, or truncated data?"
+                               % (instrument_id, day.strftime("%d %b %y"),
+                                  first_record, last_candle, present))
+                for (issue_id, instrument_id, description, _) in \
+                        catalogue.held_revisions():
+                    self._pending_items.append(("revision", instrument_id,
+                                                issue_id))
+                    self.pending_list.insert(
+                        "end", "HELD REVISION - %s: %s"
+                               % (instrument_id, description[:160]))
             finally:
                 catalogue.close()
         except Exception as exc:
-            lines.append("The confirmation lists could not be read: %s" % exc)
-        if not lines:
-            lines.append("Nothing awaits confirmation.")
-        self.confirmation_text.config(state="normal")
-        self.confirmation_text.delete("1.0", "end")
-        self.confirmation_text.insert("end", "\n".join(lines))
-        self.confirmation_text.config(state="disabled")
+            self.pending_list.insert("end",
+                                     "The lists could not be read: %s" % exc)
+        if not self._pending_items:
+            self.pending_list.insert("end", "Nothing awaits your decision.")
+
+    def _selected_pending(self):
+        selection = self.pending_list.curselection()
+        if not selection or selection[0] >= len(self._pending_items):
+            messagebox.showinfo(WINDOW_TITLE, "Please select an item in the "
+                                              "list first.")
+            return None
+        return self._pending_items[selection[0]]
+
+    def _confirm_selected(self):
+        item = self._selected_pending()
+        if item is None:
+            return
+        kind, instrument_id, payload = item
+        data_root = self.data_root_var.get().strip()
+        if kind == "cas":
+            evidence = simpledialog.askstring(
+                WINDOW_TITLE, "You are confirming the CAS rule for %s from "
+                              "03 Aug 26 (D-06).\nPlease state your basis "
+                              "(e.g. the NSE circular):" % instrument_id)
+            if not evidence:
+                return
+            self._run_in_background(
+                "Confirming the CAS rule for %s and re-validating..."
+                % instrument_id,
+                lambda: confirm_cas_rule(data_root, instrument_id, evidence,
+                                         "Owner, %s"
+                                         % datetime.now().strftime("%d %b %y")))
+        elif kind == "day":
+            answer = simpledialog.askstring(
+                WINDOW_TITLE,
+                "Confirm %s %s as a special session.\nEnter: TYPE OPEN CLOSE"
+                "\nTYPE is SPECIAL or SPECIAL_CAS; times are HH:MM"
+                " (CLOSE may be blank when unknown).\nExample: SPECIAL 13:45 "
+                "14:45" % (instrument_id, payload.strftime("%d %b %y")))
+            if not answer:
+                return
+            parts = answer.split()
+            if len(parts) < 2 or parts[0] not in ("SPECIAL", "SPECIAL_CAS"):
+                messagebox.showerror(WINDOW_TITLE, "Please enter TYPE OPEN "
+                                                   "[CLOSE], e.g. SPECIAL "
+                                                   "13:45 14:45")
+                return
+            def parse_time(text):
+                hour, minute = text.split(":")
+                import datetime as dt
+                return dt.time(int(hour), int(minute))
+            session_open = parse_time(parts[1])
+            session_close = parse_time(parts[2]) if len(parts) > 2 else None
+            self._run_in_background(
+                "Confirming %s %s and re-validating..."
+                % (instrument_id, payload),
+                lambda: confirm_special_session(
+                    data_root, instrument_id, payload, parts[0], session_open,
+                    session_close, "Owner confirmation",
+                    "Owner, %s" % datetime.now().strftime("%d %b %y")))
+        else:
+            messagebox.showinfo(WINDOW_TITLE, "Use the Approve/Reject "
+                                              "buttons for a held revision.")
+
+    def _decide_revision(self, approve):
+        item = self._selected_pending()
+        if item is None:
+            return
+        kind, instrument_id, _ = item
+        if kind != "revision":
+            messagebox.showinfo(WINDOW_TITLE, "Please select a held revision.")
+            return
+        data_root = self.data_root_var.get().strip()
+        if approve:
+            if not messagebox.askyesno(
+                    WINDOW_TITLE, "Apply the held revision for %s? The "
+                                  "previous data generation is retained."
+                    % instrument_id):
+                return
+            self._run_in_background(
+                "Applying the approved revision for %s..." % instrument_id,
+                lambda: approve_held_revision(data_root, instrument_id))
+        else:
+            note = simpledialog.askstring(
+                WINDOW_TITLE, "Reason for rejecting the %s revision "
+                              "(kept as evidence):" % instrument_id) or ""
+            self._run_in_background(
+                "Rejecting the held revision for %s..." % instrument_id,
+                lambda: reject_held_revision(data_root, instrument_id, note))
+
+    # --- maintenance handlers ------------------------------------------------------
+    def _add_update_folder(self):
+        folder = filedialog.askdirectory(title="Choose a folder of changed "
+                                               "source files")
+        if folder and folder not in self.folder_list.get(0, "end"):
+            self.folder_list.insert("end", folder)
+
+    def _start_update(self):
+        if self._worker is not None and self._worker.is_alive():
+            messagebox.showinfo(WINDOW_TITLE, "A run is already in progress.")
+            return
+        folders = list(self.folder_list.get(0, "end"))
+        data_root = self.data_root_var.get().strip()
+        if not data_root or not folders:
+            messagebox.showerror(WINDOW_TITLE, "Please choose the data root "
+                                               "and at least one update "
+                                               "folder.")
+            return
+        self.settings["data_root"] = data_root
+        self.settings["last_source_folders"] = folders
+        settings_mod.save_settings(self.settings)
+        self._run_in_background(
+            "Running the update...",
+            lambda: run_update(
+                data_root, folders,
+                live_log=lambda m: self._queue.put(("log", m)),
+                progress=lambda s, t, x: self._queue.put(("progress",
+                                                          (s, t, x)))))
+
+    def _start_integrity_check(self):
+        data_root = self.data_root_var.get().strip()
+        if not data_root:
+            messagebox.showerror(WINDOW_TITLE, "Please choose the data root "
+                                               "first.")
+            return
+        self._run_in_background(
+            "Checking integrity...",
+            lambda: run_integrity_check(
+                data_root, live_log=lambda m: self._queue.put(("log", m))))
+
+    def _start_restore(self):
+        data_root = self.data_root_var.get().strip()
+        if not data_root:
+            messagebox.showerror(WINDOW_TITLE, "Please choose the data root "
+                                               "first.")
+            return
+        backup = filedialog.askopenfilename(
+            title="Choose the catalogue backup to restore",
+            initialdir=os.path.join(data_root, "backups", "catalogue"),
+            filetypes=[("Catalogue backups", "*.duckdb")])
+        if not backup:
+            return
+        if not messagebox.askyesno(
+                WINDOW_TITLE, "Restore the catalogue from\n%s?\n\nEvery "
+                              "other Q-MAP program must be closed. Check "
+                              "integrity runs afterwards." % backup):
+            return
+        self._run_in_background(
+            "Restoring the catalogue backup...",
+            lambda: restore_from_backup(
+                data_root, backup,
+                live_log=lambda m: self._queue.put(("log", m))))
+
+    def _run_in_background(self, status_text, action):
+        """Run one maintenance action off the main thread, with the usual
+        queue-based completion handling."""
+        if self._worker is not None and self._worker.is_alive():
+            messagebox.showinfo(WINDOW_TITLE, "A run is already in progress.")
+            return
+        self.run_button.config(state="disabled")
+        self.update_button.config(state="disabled")
+        self._run_started_at = datetime.now()
+        self._set_status(status_text)
+        self._append_log("=== %s ===" % status_text)
+
+        def worker():
+            try:
+                outcome = action()
+                self._queue.put(("action_done", outcome))
+            except DatabaseUnavailableError as exc:
+                self._queue.put(("error", str(exc)))
+            except Exception:
+                self._queue.put(("error", "Unexpected error:\n%s"
+                                 % traceback.format_exc()))
+
+        self._worker = threading.Thread(target=worker, daemon=True)
+        self._worker.start()
 
     # --- small widgets -------------------------------------------------------------------
     def _set_status(self, text):

@@ -181,6 +181,13 @@ def classify_day(trade_date, day_times, last_row, calendar_entry=None,
                                      REGULAR_LAST_CANDLE, REGULAR_CLOSE, True,
                                      BASIS_CANDIDATE, weekend)
         if shape == SHAPE_CAS and trade_date >= CAS_START_DATE:
+            if instrument_has_cas_rule_confirmed:
+                # The Owner has confirmed the instrument's CAS rule (D-06):
+                # CAS-shaped weekdays stop being candidates.
+                return DayClassification(
+                    trade_date, shape, STATUS_CONFIRMED_BY_OWNER, TYPE_CAS,
+                    SESSION_OPEN, CAS_LAST_CANDLE, REGULAR_CLOSE, True,
+                    BASIS_CONFIRMED, weekend)
             return DayClassification(trade_date, shape, STATUS_CANDIDATE,
                                      TYPE_CAS, SESSION_OPEN, CAS_LAST_CANDLE,
                                      REGULAR_CLOSE, True,
@@ -334,6 +341,39 @@ def _parse_calendar_date(text, line_no):
         raise FileImportError(
             "calendar file line %d: invalid date '%s'" % (line_no, text),
             check_code="V-FILE-01")
+
+
+# --- Main logic: Owner session confirmations stored as instrument rules ---------
+# The Owner's answers to the confirmation lists are stored as instrument_rule
+# rows (SESSION_PATTERN, OWNER_CONFIRMED) per 02 section 6.2. The rule value
+# encodes the confirmed pattern:
+#   "CAS"                      - the blanket CAS rule for the instrument
+#   "SPECIAL|13:45|14:45"      - one special session with its times
+#   "SPECIAL_CAS|14:20|"       - one CAS-style special session (close unknown)
+def encode_session_confirmation(session_type, session_open=None,
+                                session_close=None):
+    if session_type == TYPE_CAS:
+        return TYPE_CAS
+    open_text = session_open.strftime("%H:%M") if session_open else ""
+    close_text = session_close.strftime("%H:%M") if session_close else ""
+    return "%s|%s|%s" % (session_type, open_text, close_text)
+
+
+def decode_session_confirmation(value):
+    """Return a SessionConfirmation for a per-day rule value, or None for the
+    blanket CAS rule (which is handled through cas_rule_confirmed)."""
+    if value == TYPE_CAS:
+        return None
+    parts = value.split("|")
+    session_type = parts[0]
+    def _time(text):
+        if not text:
+            return None
+        hour, minute = text.split(":")
+        return time(int(hour), int(minute))
+    return SessionConfirmation(session_type,
+                               _time(parts[1] if len(parts) > 1 else ""),
+                               _time(parts[2] if len(parts) > 2 else ""))
 
 
 def _parse_calendar_time(text, line_no):
