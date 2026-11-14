@@ -32,7 +32,7 @@ Full test runs: 181 tests, 0 failures, 0 errors, 0 skipped on the PR #9 branch (
 - **M4** is not implemented and not approved for development (needs G-11). **M5** is not implemented (needs the approved scoring profile and weights, G-10).
 - ORB backtesting is future work. Broker connectivity, automatic trading, cloud synchronisation and AI interpretation are not available and must not be represented as available.
 - Owner actions: Windows testing, T-ENV-01/EV-12, verification of each ±15% occurrence (G-03), CAS and special-session confirmations.
-- **Open defect:** catalogue backup names (`qmap_catalogue_<dd_mmm_yy_hhmmss>.duckdb`) collide when two maintenance runs start within the same second, so an earlier backup is overwritten. This makes T-MNT-10 fail intermittently (seen on `main` at `6f3d0c3`, Linux: 181 run, 1 failure). It needs a separate, focused fix PR; do not weaken the test.
+- **Fixed (backup-name PR):** catalogue backup names used to collide when two maintenance runs started within the same second, overwriting an earlier backup and making T-MNT-10 fail intermittently. Backups are now created only through `storage.create_catalogue_backup` (a `_002`, `_003`... suffix within one second) and ordered chronologically by `storage.catalogue_backup_sort_key` for retention. Do not weaken T-MNT-10 or `tests/test_catalogue_backups.py`.
 
 ## 3. Read the authoritative documents before acting
 
