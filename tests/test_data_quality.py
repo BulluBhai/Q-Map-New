@@ -208,6 +208,58 @@ class TestDataQuality(unittest.TestCase):
         finally:
             catalogue.close()
 
+    @unittest.skipUnless(support.fixtures_present(), "sample files absent")
+    def test_t_dq_09_verification_survives_update(self):
+        # The Owner's VERIFIED_OK decision is not undone by a later update of
+        # the same history: no new blocking issue is opened for that
+        # occurrence, while the other occurrences stay blocking.
+        from qmap_database.catalogue import Catalogue
+        from qmap_database.maintenance import (run_initial_load, run_update,
+                                               verify_continuity_issue)
+        from qmap_database.storage import DataRoot
+        root = support.new_temp_folder("tdq09_root")
+        source_folder = support.new_temp_folder("tdq09_source")
+        source_path = os.path.join(source_folder, "CONCOR.txt")
+        with open(support.CONCOR_TXT, "rb") as source:
+            content = source.read()
+        with open(source_path, "wb") as target:      # a temporary copy
+            target.write(content)
+        run_initial_load(root, [source_path])
+        catalogue = Catalogue(DataRoot(root).catalogue_path, read_only=True)
+        try:
+            issue_id = [row[0] for row in
+                        catalogue.continuity_issues_awaiting_owner()
+                        if row[2].date() == date(2024, 6, 4)][0]
+        finally:
+            catalogue.close()
+        with self.assertRaises(ValueError):
+            verify_continuity_issue(root, issue_id, "  ")
+        backup = verify_continuity_issue(root, issue_id,
+                                         "Owner: election-result day")
+        self.assertTrue(os.path.exists(backup))
+
+        # The registered source gains one new day; the update re-validates
+        # the whole file (same history, so no revision).
+        with open(source_path, "wb") as target:
+            target.write(content + b"2026-11-09,440,445,436,441.5,100000,0\r\n")
+        result = run_update(root, [source_folder])
+        self.assertTrue(result.status.startswith("SUCCESS"), result.summary)
+        self.assertEqual([o.action for o in result.file_outcomes], ["APPEND"])
+
+        catalogue = Catalogue(DataRoot(root).catalogue_path, read_only=True)
+        try:
+            rows = catalogue.con.execute(
+                "SELECT status, affects_continuity FROM data_issue WHERE "
+                "instrument_id = 'CONCOR' AND check_code = 'V-PX-05' AND "
+                "ts_from = TIMESTAMP '2024-06-04 00:00:00'").fetchall()
+            self.assertEqual(rows, [(ISSUE_VERIFIED_OK, False)])
+            self.assertEqual(len(catalogue.continuity_issues_awaiting_owner()),
+                             7)
+        finally:
+            catalogue.close()
+        with self.assertRaises(ValueError):   # already verified
+            verify_continuity_issue(root, issue_id, "again")
+
 
 class TestDuplicates(unittest.TestCase):
 

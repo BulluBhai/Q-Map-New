@@ -31,8 +31,9 @@ from qmap_database import settings as settings_mod          # noqa: E402
 from qmap_database.errors import DatabaseUnavailableError   # noqa: E402
 from qmap_database.maintenance import (                     # noqa: E402
     approve_held_revision, confirm_cas_rule, confirm_special_session,
-    reject_held_revision, run_initial_load, run_integrity_check, run_update,
-    restore_from_backup)
+    export_m1a_evidence, reject_held_revision, run_initial_load,
+    run_integrity_check, run_update, restore_from_backup,
+    verify_continuity_issue)
 
 # --- Constants ---------------------------------------------------------------
 POLL_MILLISECONDS = 100
@@ -206,6 +207,8 @@ class DataManagerApp(tk.Tk):
                                                             padx=4)
         tk.Button(row, text="Restore catalogue backup...",
                   command=self._start_restore).pack(side="left", padx=4)
+        tk.Button(row, text="Export data summary...",
+                  command=self._start_export).pack(side="left", padx=4)
         self.folder_list = tk.Listbox(frame, height=3, selectmode="extended")
         self.folder_list.pack(fill="x", pady=(4, 0))
         for folder in self.settings.get("last_source_folders", []):
@@ -219,10 +222,11 @@ class DataManagerApp(tk.Tk):
 
     def _build_confirmation_section(self, body):
         frame = tk.LabelFrame(
-            body, text="Awaiting your decision - sessions and held revisions",
+            body, text="Awaiting your decision - sessions, held revisions "
+                       "and continuity issues (G-03)",
             padx=6, pady=4)
         frame.pack(fill="both", padx=8, pady=(2, 8))
-        self.pending_list = tk.Listbox(frame, height=6)
+        self.pending_list = tk.Listbox(frame, height=10)
         self.pending_list.pack(fill="both", expand=True)
         self._pending_items = []
         row = tk.Frame(frame)
@@ -432,6 +436,17 @@ class DataManagerApp(tk.Tk):
                                "Special session, or truncated data?"
                                % (instrument_id, day.strftime("%d %b %y"),
                                   first_record, last_candle, present))
+                for (issue_id, instrument_id, ts_from, check_code,
+                     description) in \
+                        catalogue.continuity_issues_awaiting_owner():
+                    self._pending_items.append(("continuity", instrument_id,
+                                                (issue_id, ts_from,
+                                                 description)))
+                    self.pending_list.insert(
+                        "end", "G-03 BLOCKING - %s %s: %s"
+                               % (instrument_id,
+                                  ts_from.strftime("%d %b %y"),
+                                  description[:140]))
                 for (issue_id, instrument_id, description, _) in \
                         catalogue.held_revisions():
                     self._pending_items.append(("revision", instrument_id,
@@ -502,6 +517,26 @@ class DataManagerApp(tk.Tk):
                     data_root, instrument_id, payload, parts[0], session_open,
                     session_close, "Owner confirmation",
                     "Owner, %s" % datetime.now().strftime("%d %b %y")))
+        elif kind == "continuity":
+            issue_id, ts_from, description = payload
+            note = simpledialog.askstring(
+                WINDOW_TITLE,
+                "G-03: mark this occurrence VERIFIED_OK only after you have "
+                "personally verified it as a genuine move.\n\n%s %s\n%s\n\n"
+                "It will no longer block continuity-dependent calculations "
+                "(e.g. the EMA scanner). Other occurrences stay blocking.\n\n"
+                "State your basis (kept as evidence):"
+                % (instrument_id, ts_from.strftime("%d %b %y"),
+                   description[:300]))
+            if not note or not note.strip():
+                return
+            self._run_in_background(
+                "Recording your verification of %s %s..."
+                % (instrument_id, ts_from.strftime("%d %b %y")),
+                lambda: verify_continuity_issue(
+                    data_root, issue_id,
+                    "%s (Owner, %s)" % (note.strip(),
+                                        datetime.now().strftime("%d %b %y"))))
         else:
             messagebox.showinfo(WINDOW_TITLE, "Use the Approve/Reject "
                                               "buttons for a held revision.")
@@ -594,6 +629,31 @@ class DataManagerApp(tk.Tk):
             lambda: restore_from_backup(
                 data_root, backup,
                 live_log=lambda m: self._queue.put(("log", m))))
+
+    def _start_export(self):
+        """Write the catalogue summary CSVs (sources and fingerprints, record
+        counts, all issues, all quarantined rows) to a chosen folder for
+        inspection in Excel. Read-only for the database."""
+        data_root = self.data_root_var.get().strip()
+        if not data_root:
+            messagebox.showerror(WINDOW_TITLE, "Please choose the data root "
+                                               "first.")
+            return
+        folder = filedialog.askdirectory(
+            title="Choose a folder for the summary files (outside the data "
+                  "root)")
+        if not folder:
+            return
+        if os.path.abspath(folder).startswith(os.path.abspath(data_root)):
+            messagebox.showerror(WINDOW_TITLE, "Please choose a folder "
+                                               "outside the data root.")
+            return
+
+        def action():
+            for path in export_m1a_evidence(data_root, folder):
+                self._queue.put(("log", "Written: %s" % path))
+            return None
+        self._run_in_background("Exporting the data summary...", action)
 
     def _run_in_background(self, status_text, action):
         """Run one maintenance action off the main thread, with the usual
