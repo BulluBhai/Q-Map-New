@@ -186,6 +186,8 @@ Pay attention to messages about invalid or unreadable files, invalid OHLC prices
 
 A warning is not automatically proof that the source is wrong. It is a request to inspect the available evidence.
 
+**Files that are not imported because of their name.** Q-MAP recognises an instrument from the file name. At present only NIFTY and BANKNIFTY (1-minute files), CONCOR and INFY (daily stock files) and NIFTYIT (daily index) are registered. Any other file is listed at the end of the log as **NOT IMPORTED - ... not a registered instrument**, followed by the list of instruments that can be loaded now. Nothing is changed for such a file. Other stocks are registered in the pilot stage, after you approve the pilot list; there is no screen to add them yet.
+
 ### 4.7 Section 4 — Maintenance (M1b)
 
 This section is for later updates and database maintenance.

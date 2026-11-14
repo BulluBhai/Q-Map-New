@@ -375,11 +375,7 @@ class DataManagerApp(tk.Tk):
         self._append_log("=== Finished: %s ===" % result.status)
         if result.report_path:
             self._append_log("Validation report: %s" % result.report_path)
-        if result.unrecognised_files:
-            self._append_log("Unrecognised files (please map them to "
-                             "instruments):")
-            for path in result.unrecognised_files:
-                self._append_log("  %s" % path)
+        self._report_unrecognised(result.unrecognised_files)
         self._refresh_pending()
 
     def _finish_action(self, outcome):
@@ -396,6 +392,7 @@ class DataManagerApp(tk.Tk):
             self._append_log("=== Finished: %s ===" % outcome.status)
             if outcome.report_path:
                 self._append_log("Validation report: %s" % outcome.report_path)
+            self._report_unrecognised(outcome.unrecognised_files)
         elif isinstance(outcome, list):         # integrity / restore problems
             if outcome:
                 self._set_status("Integrity problems found - see the log.")
@@ -408,6 +405,36 @@ class DataManagerApp(tk.Tk):
             self._set_status("Done.")
             self._append_log("=== Done ===")
         self._refresh_pending()
+
+    def _report_unrecognised(self, paths):
+        """Explain files whose name matches no registered instrument. They
+        were not imported and nothing else changed. New instruments are
+        registered in the pilot stage (M1c), after the Owner approves the
+        pilot list, so the Data Manager cannot map them yet."""
+        if not paths:
+            return
+        registered = "the registered instruments"
+        try:
+            from qmap_database.catalogue import Catalogue
+            from qmap_database.storage import DataRoot
+            catalogue = Catalogue(DataRoot(
+                self.data_root_var.get().strip()).catalogue_path,
+                read_only=True)
+            try:
+                registered = ", ".join(sorted(
+                    i["instrument_id"] for i in catalogue.instruments()))
+            finally:
+                catalogue.close()
+        except Exception:
+            pass
+        self._append_log("NOT IMPORTED - %d file(s) whose name is not a "
+                         "registered instrument. Nothing was changed for "
+                         "them:" % len(paths))
+        for path in paths:
+            self._append_log("  %s" % path)
+        self._append_log("Q-MAP can load only these instruments at present: "
+                         "%s. Other stocks are added in the pilot stage, "
+                         "after you approve the pilot list." % registered)
 
     def _fail_run(self, message):
         if getattr(self, "_closing", False):
