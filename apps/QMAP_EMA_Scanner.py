@@ -100,6 +100,17 @@ def parse_dates(text):
     return dates
 
 
+def _is_inside(path, folder):
+    """True when path is folder or lies inside it; case-insensitive on
+    Windows, and a sibling such as D:\\QMAP_DATA_out is not 'inside'."""
+    path = os.path.normcase(os.path.abspath(path))
+    folder = os.path.normcase(os.path.abspath(folder))
+    try:
+        return os.path.commonpath([path, folder]) == folder
+    except ValueError:                     # different drives on Windows
+        return False
+
+
 def reference_rows(results_by_case):
     """Reference_Check sheet rows: expected versus actual, per case."""
     rows = []
@@ -372,7 +383,7 @@ class EmaScannerApp(tk.Tk):
             messagebox.showerror(WINDOW_TITLE, "Please choose an output "
                                                "folder.")
             return
-        if os.path.abspath(out).startswith(os.path.abspath(root)):
+        if _is_inside(out, root):
             messagebox.showerror(WINDOW_TITLE, "Choose an output folder "
                                                "outside the data root.")
             return
