@@ -7,7 +7,7 @@ import os
 import shutil
 import sys
 import unittest
-from datetime import date
+from datetime import date, timedelta
 
 import support
 
@@ -84,6 +84,48 @@ class TestUniverseInventory(unittest.TestCase):
         after = {name: inventory.sha256_of(os.path.join(self.folder, name))
                  for name in self.before}
         self.assertEqual(after, self.before)
+
+
+class TestInventoryCalculations(unittest.TestCase):
+    """Focused calculation tests requested in the PR #9 review."""
+
+    def test_other_files_also_absent_count(self):
+        # Three files alive 1-3 Jan 24; on 2 Jan only A has data, so B and C
+        # are absent. For B, exactly one OTHER file (C) is also absent.
+        days = [date(2024, 1, 1), date(2024, 1, 2), date(2024, 1, 3)]
+        files = {"A": days, "B": [days[0], days[2]], "C": [days[0], days[2]],
+                 "D": days}
+        spans = {name: (dates[0], dates[-1]) for name, dates in files.items()}
+        calendar = inventory.build_calendar(files, spans)
+        index = {row["date"]: i for i, row in enumerate(calendar)}
+        self.assertEqual((calendar[1]["files_alive"],
+                          calendar[1]["files_with_data"]), (4, 2))
+        ranges = inventory.find_absences("B", files["B"], calendar, index,
+                                         days[0])
+        self.assertEqual(len(ranges), 1)
+        self.assertEqual(ranges[0]["range_start"], days[1])
+        self.assertEqual(ranges[0]["max_others_absent"], 1)
+
+    def _parsed(self, volumes):
+        parsed = inventory.ParsedFile()
+        for offset, volume in enumerate(volumes):
+            inventory._append_row(parsed, date(2024, 1, 1) + timedelta(offset),
+                                  ["100", "101", "99", "100"], str(volume),
+                                  None)
+        return parsed
+
+    def test_median_volume_even_count(self):
+        # Even count with different middle values (20 and 30): median 25.
+        facts, _, _ = inventory.analyse_rows(self._parsed([40, 10, 30, 20]))
+        self.assertEqual(facts["median_volume_latest_250"], 25)
+
+    def test_median_volume_odd_count_and_latest_250_only(self):
+        facts, _, _ = inventory.analyse_rows(self._parsed([5, 1, 3]))
+        self.assertEqual(facts["median_volume_latest_250"], 3)
+        # 260 rows: only the latest 250 (volumes 11..260) count; median of an
+        # even count = (135 + 136) / 2.
+        facts, _, _ = inventory.analyse_rows(self._parsed(range(1, 261)))
+        self.assertEqual(facts["median_volume_latest_250"], 135.5)
 
 
 if __name__ == "__main__":

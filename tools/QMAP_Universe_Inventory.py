@@ -20,6 +20,7 @@ import os
 import platform
 import queue
 import re
+import statistics
 import sys
 import threading
 import time
@@ -463,10 +464,12 @@ def analyse_rows(parsed):
                                                    & latest_window)
     facts["latest800_large_moves"] = sum(1 for m in moves
                                          if m["date"] in latest_window)
-    recent_volumes = sorted(v for v in volumes_int[-MEDIAN_VOLUME_ROWS:]
-                            if v is not None)
+    recent_volumes = [v for v in volumes_int[-MEDIAN_VOLUME_ROWS:]
+                      if v is not None]
+    # Conventional median: the average of the two middle values when the
+    # count is even (statistics.median, standard library).
     facts["median_volume_latest_250"] = (
-        recent_volumes[len(recent_volumes) // 2] if recent_volumes else None)
+        statistics.median(recent_volumes) if recent_volumes else None)
     facts["last_close"] = closes[-1] if closes else None
     return facts, moves, dates
 
@@ -563,6 +566,9 @@ def find_absences(path, dates, calendar_rows, calendar_index, latest800):
         row = calendar_rows[pos]
         if row["date"] in own:
             continue
+        # files_alive includes this file and files_with_data excludes it (it
+        # is absent here), so the OTHER alive files without data are
+        # files_alive - files_with_data - 1.
         others_absent = row["files_alive"] - row["files_with_data"] - 1
         if ranges and ranges[-1]["end_pos"] == pos - 1:
             current = ranges[-1]
