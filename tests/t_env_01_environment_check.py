@@ -1,4 +1,4 @@
-""""T-ENV-01 — Environment check for Gate 0 (run from IDLE with F5).
+"""T-ENV-01 — Environment check for Gate 0 (run from IDLE with F5).
 
 Prints the Python and third-party package versions, compares them with the
 exact pins in requirements.txt, checks that tkinter is importable, and writes
@@ -100,8 +100,8 @@ def run_check():
     evidence_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                  evidence_name)
     with open(evidence_path, "w", encoding="utf-8") as handle:
-        handle.write("\\n".join(lines) + "\\n")
-    print("\\nEvidence written to: %s" % evidence_path)
+        handle.write("\n".join(lines) + "\n")
+    print("\nEvidence written to: %s" % evidence_path)
     print("Done. Please confirm this printout came from your own PC.")
 
 
