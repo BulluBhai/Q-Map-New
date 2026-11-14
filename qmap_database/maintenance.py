@@ -1483,6 +1483,31 @@ def confirm_special_session(data_root_path, instrument_id, trade_date,
     run_revalidate(data_root_path, [instrument_id])
 
 
+def verify_continuity_issue(data_root_path, issue_id, owner_note):
+    """G-03: the Owner, after personally verifying one occurrence, marks that
+    issue VERIFIED_OK (affects_continuity becomes false in the same
+    transaction, 02 section 5.2). A catalogue backup is taken first. Only an
+    OPEN continuity-blocking issue can be verified; nothing else changes."""
+    if not owner_note or not owner_note.strip():
+        raise ValueError("A verification note (your basis) is required.")
+    data_root = storage.DataRoot(data_root_path)
+    backup_path = data_root.folder("backups", "catalogue",
+                                   "qmap_catalogue_%s.duckdb"
+                                   % timestamp_suffix())
+    shutil.copy2(data_root.catalogue_path, backup_path)
+    catalogue = Catalogue(data_root.catalogue_path)
+    try:
+        open_ids = {row[0] for row in
+                    catalogue.continuity_issues_awaiting_owner()}
+        if issue_id not in open_ids:
+            raise ValueError("Issue %s is not an open continuity-blocking "
+                             "issue." % issue_id)
+        catalogue.mark_issue_verified_ok(issue_id, owner_note.strip())
+    finally:
+        catalogue.close()
+    return backup_path
+
+
 # --- Main logic: integrity check and restore (02 section 10) ------------------------
 def run_integrity_check(data_root_path, live_log=None):
     """Check integrity: every active-generation file exists and matches its
