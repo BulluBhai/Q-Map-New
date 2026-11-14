@@ -8,7 +8,7 @@ Q-MAP is a modular, single-user market-data and technical-analysis platform. Its
 
 This repository holds both the authoritative project reference (approved blueprints, detailed design documents, independent verification material, implementation handover and development governance) and the implemented Q-MAP code. The presence of a design document does not by itself authorise implementing it: each milestone still needs its stated prerequisites and Owner decisions.
 
-**Using Q-MAP:** start with the [Owner's User Guide v1.0](docs/user_guides/Q-MAP_Owners_User_Guide_v1.0_14_Nov_26.md). It explains installation from IDLE, the environment check, the Data Manager, the M2 example, the Universe Inventory and the EMA Scanner.
+**Using Q-MAP:** first use: [Getting Started](docs/user_guides/Q-MAP_Getting_Started_14_Nov_26.md) (one page). Full detail: the [Owner's User Guide v1.0](docs/user_guides/Q-MAP_Owners_User_Guide_v1.0_14_Nov_26.md). It explains installation from IDLE, the environment check, the Data Manager, the M2 example, the Universe Inventory and the EMA Scanner.
 
 > **Important — public repository:** Repository contents are visible to anyone. Do not commit passwords, API keys, tokens, personal information, confidential material, production market-data archives, live databases or backups. Public users may fork the repository and propose changes, but only users and integrations with repository write access can push directly to it. All changes intended for `main` must follow the pull-request process below.
 
@@ -95,6 +95,7 @@ The database subsystem (`qmap_database`) and the analytical subsystem (`qmap_eng
 
 ### `docs/user_guides/` — how to use the current applications
 
+- [Getting Started](docs/user_guides/Q-MAP_Getting_Started_14_Nov_26.md) — one page from installation to the first EMA result.
 - [Owner's User Guide v1.0](docs/user_guides/Q-MAP_Owners_User_Guide_v1.0_14_Nov_26.md) — installation, environment check and use of every current application.
 
 ### `docs/blueprints/` — what the project is and its technical direction

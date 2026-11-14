@@ -53,6 +53,9 @@ Desktop.ini
 *.db-shm
 *.wal
 
+# Local application settings (they hold the Owner's own folder paths)
+/config/
+
 # Local data, backup and generated-output directories
 /QMAP_DATA/
 /market/

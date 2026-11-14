@@ -203,13 +203,14 @@ def run_initial_load(data_root_path, selected_files, calendar_file=None,
                                      facts["size"], facts["modified"], sha,
                                      None, None, None, 0, 0, 0, 0, 0, 0,
                                      ACTION_FAILED,
-                                     "unrecognised file name - please map it "
-                                     "to an instrument")
+                                     "unrecognised file name - not a "
+                                     "registered instrument")
                 result.unrecognised_files.append(path)
                 result.file_outcomes.append(FileOutcome(
                     path, None, ACTION_FAILED,
-                    "unrecognised - please map"))
-                logger.info("%s: unrecognised - please map", facts["name"])
+                    "unrecognised - not a registered instrument"))
+                logger.info("%s: not imported - file name is not a registered "
+                            "instrument", facts["name"])
                 continue
             by_instrument.setdefault(instrument["instrument_id"],
                                      []).append((path, sha, instrument))
@@ -1041,11 +1042,12 @@ def run_update(data_root_path, selected_folders, live_log=None, progress=None,
                                      facts["size"], facts["modified"], sha,
                                      None, None, None, 0, 0, 0, 0, 0, 0,
                                      ACTION_FAILED,
-                                     "unrecognised file name - please map it "
-                                     "to an instrument")
+                                     "unrecognised file name - not a "
+                                     "registered instrument")
                 result.unrecognised_files.append(path)
                 result.file_outcomes.append(FileOutcome(
-                    path, None, ACTION_FAILED, "unrecognised - please map"))
+                    path, None, ACTION_FAILED,
+                    "unrecognised - not a registered instrument"))
                 continue
             by_instrument.setdefault(instrument["instrument_id"],
                                      []).append((path, instrument))
