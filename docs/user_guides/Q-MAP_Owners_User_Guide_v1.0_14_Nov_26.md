@@ -221,7 +221,7 @@ Use this only when a catalogue restore is genuinely required and you know which 
 
 The application asks you to choose a catalogue backup file, normally from the data-root folder under `backups\\catalogue\\`. It asks for confirmation before restoring.
 
-Close all Q-MAP applications before a restore. After restoring, the program runs an integrity check.
+Close every **other** Q-MAP program before a restore; leave the Data Manager open because it is the program performing the restore. After restoring, it runs an integrity check.
 
 A restore is not an everyday update operation. Do not use it simply because you are unsure what a warning means.
 
@@ -475,11 +475,13 @@ Each of the six comparisons can contribute **+1** when bullish, **-1** when bear
 This is not simply a count of how many comparisons are positive: bearish comparisons subtract from the net and ties contribute zero.
 
 The state is shown as one of:
-- BULLISH;
-- NEUTRAL_LEANING_BULLISH;
-- NEUTRAL;
-- NEUTRAL_LEANING_BEARISH;
-- BEARISH.
+- **BULLISH** — net score +4, +5 or +6;
+- **NEUTRAL_LEANING_BULLISH** — net score +3;
+- **NEUTRAL** — net score from -2 to +2;
+- **NEUTRAL_LEANING_BEARISH** — net score -3;
+- **BEARISH** — net score -4, -5 or -6.
+
+These labels describe the balance of the six EMA comparisons. They are not separate predictions.
 
 The score is not a probability of profit, a buy/sell instruction or a guarantee of future movement. It is a rule-based summary of the six checks.
 
@@ -511,7 +513,7 @@ Do not expect a combined score from the current EMA scanner. A second scanner an
 | Scanner stock list is empty | Confirm that daily stock data has been imported into the selected data root. |
 | Scanner says to choose an output folder | Use **Browse...** and select an existing folder for the reports. |
 | Scanner says to choose at least one stock and one analysis date | Select one or more stocks and enter a date. |
-| Scanner reports INVALID_DATA | A data-quality issue is blocking the requested analysis window. Read the messages and inspect the issue; do not bypass it. |
+| Scanner reports INVALID_DATA | A continuity-blocking G-03 issue overlaps the 800-bar analysis window. Read the issue details and resolve it only through the Owner verification process; do not bypass it. |
 | Scanner reports INSUFFICIENT_DATA | There are not enough usable bars or the requested date is not supported under the current provisional rule. Read the message for the reason. |
 | An inventory file appears on Problems | The file could not be inspected normally. Check the exact problem in the Problems sheet and the original file. |
 | An inventory symbol has differing files | Treat it as a source conflict. The inventory tool deliberately does not select or merge the files. |
