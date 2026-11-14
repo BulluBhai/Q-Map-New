@@ -108,7 +108,7 @@ It saves that file in the `tests` folder. Keep it: it records the environment in
 Use this order for your first session:
 
 1. Run the environment check in section 2.5.
-2. Open the Data Manager and create a small test database using a small set of files you deliberately choose.
+2. Open the Data Manager and use a **separate, new test data-root folder** (not your intended long-term database) with a small set of files you deliberately choose. This keeps the first experiment isolated from any existing Q-MAP data.
 3. Review the import log and data-quality issues. Do not automatically accept warnings or large price moves.
 4. Run **Check integrity**.
 5. Run the M2 Example to confirm the stored data can be read at different supported timeframes.
@@ -233,17 +233,26 @@ Choose an export folder outside the Q-MAP data root. The export is for review; i
 
 ### 4.8 Awaiting your decision — sessions, held revisions and continuity issues
 
-This section lists items that require your decision. Click **Refresh list** to reload the items.
+This section lists four kinds of items that require your decision: CAS-rule candidates, unrecognised trading days, G-03 continuity issues and held historical revisions. Click **Refresh list** to reload the items. Select one item before using an action.
 
-Select an item before using the relevant action.
+**Confirm selected... — CAS rule**
 
-**Confirm selected...**
+For a listed CAS candidate, the program asks you to state the basis for confirming the CAS rule for that instrument from **03 Aug 26** (for example, the relevant NSE circular). Enter the actual source you checked. The program then records the confirmation and re-validates the data. Do not confirm a CAS pattern merely because the file looks unusual.
 
-This is used for certain session or continuity confirmations. The program asks for the information or evidence required for the selected item. Read the prompt carefully and enter only information you have independently checked.
+**Confirm selected... — unrecognised trading day**
 
-For a G-03 continuity issue, the **Confirm selected...** action requires a written basis for marking that particular issue **VERIFIED_OK**. This is an important decision: only verify a move after checking the original data and the reason for the move. The program takes a catalogue backup before changing the issue status.
+The list may show a date with only a partial set of records and ask whether it was a special session or truncated data. The prompt requires this exact format:
 
-Verifying one occurrence does not automatically verify every other large move in the same stock.
+- `SPECIAL 13:45 14:45`
+- `SPECIAL_CAS 13:45 14:45`
+
+The two times are the session open and close in `HH:MM` format. If the close is genuinely unknown, it may be left blank, for example `SPECIAL 13:45`. Use `SPECIAL` or `SPECIAL_CAS` only when you have reliable evidence for that session. Do not label incomplete source data as a special session just to clear the item.
+
+**Confirm selected... — G-03 continuity issue**
+
+For a G-03 continuity issue, the program asks for a written basis before marking that particular occurrence **VERIFIED_OK**. Only verify a move after checking the original data and the reason for the move. The program records your explanation as evidence. Verifying one occurrence does not automatically verify every other large move in the same stock.
+
+These confirmation actions re-validate the affected data. If you are unsure, leave the item awaiting your decision.
 
 **Approve held revision**
 
@@ -265,7 +274,7 @@ Run it from IDLE using **F5**.
 
 The program asks you to choose the Q-MAP data root created by the Data Manager, unless it can use a saved data-root setting.
 
-It prints example data retrieval results, including the available timeframes for selected NIFTY and CONCOR examples. This is a demonstration, not a separate data importer or scanner.
+It prints example data retrieval results for NIFTY, BANKNIFTY and CONCOR. It demonstrates 5-minute data, daily data, incomplete-bar handling, a deliberate unsupported-timeframe error, and timeframe aggregation using the stored source data. This is a demonstration, not a separate data importer or scanner.
 
 If it reports that no data root was selected, choose the correct folder and run it again. If it reports missing instruments or no bars, first check whether the relevant data was actually imported.
 
@@ -305,10 +314,11 @@ Save it outside the source-data folder and outside the Q-MAP repository.
 
 ### 6.4 Section 3 — Options
 
-The thresholds are fixed by the approved inventory design. The current screen explains them as:
-- ±15% moves;
+The thresholds are fixed by the inventory design. The current screen explains them as:
+- ±15% open or close moves versus the previous close;
 - 20 identical consecutive volume values;
-- 800-row and 2,500-row checks.
+- 800-row and 2,500-row history checks;
+- a 0.05 price tick grid, **reported only** (the inventory does not decide that an unverified tick rule is valid).
 
 There are no user-adjustable threshold controls in this screen.
 
@@ -347,7 +357,8 @@ Important interpretations:
 - Large moves are reported for G-03 review. The tool does not verify or unblock them.
 - Missing dates are shown for review; they are not automatically declared errors.
 - Pilot eligibility contains flags only. It is not an approved final stock list.
-- At the end, the tool checks the fingerprints of a sample of source files again. The workbook reports whether the sampled files remained unchanged.
+- At the end, the tool checks the fingerprints of a sample of source files again (not every file). The workbook reports whether any file in that sample changed during the scan.
+- Every discovered file is recorded in either **Files** or **Problems**; an unsupported file type is listed under **Problems**.
 
 Do not delete source files or resolve conflicts solely on the basis of an inventory flag. Inspect the original files and decide what action is justified.
 
@@ -377,9 +388,9 @@ Choose the same Q-MAP data root that you used in the Data Manager.
 
 Click **Load stock list**. The scanner reads the daily stock instruments available in that database and lists them.
 
-Select the stocks you wish to analyse. The list allows multiple selections. **Select all** selects every listed stock. The count shows how many are selected.
+When the list loads, the application automatically selects **all** listed stocks. The count shows how many are selected. The **Select all** button selects them all again.
 
-For your first test, select just one or two familiar stocks.
+For your first test, do not accidentally run the full universe. Click the one stock you want to test; use Ctrl-click to add or remove individual stocks from the selection. Check the selected count before running.
 
 ### 7.3 Section 2 — Output: folder for the run files
 
@@ -459,7 +470,9 @@ The score is on a 0–100 scale and represents how many of six bullish trend-ali
 - EMA 50 above EMA 200;
 - EMA 50 rising compared with its value 10 bars earlier.
 
-A score near 100 means more of these checks support bullish alignment. A score near 0 means more checks support bearish alignment. A score around 50 means the signals are mixed.
+Each of the six comparisons can contribute **+1** when bullish, **-1** when bearish or **0** when tied. Q-MAP adds those six values to get a net score from -6 to +6, then converts that net figure to the 0–100 scale using `50 + (50 × net ÷ 6)`. For example, net +6 gives 100, net 0 gives 50, and net -6 gives 0. A score near 100 therefore means the comparisons are strongly aligned bullish; a score near 0 means they are strongly aligned bearish. A score around 50 means the directional signals balance out.
+
+This is not simply a count of how many comparisons are positive: bearish comparisons subtract from the net and ties contribute zero.
 
 The state is shown as one of:
 - BULLISH;
