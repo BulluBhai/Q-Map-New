@@ -13,6 +13,7 @@ changed.
 # --- Imports -----------------------------------------------------------------
 import json
 import os
+import shutil
 import unittest
 from datetime import date, timedelta
 
@@ -82,7 +83,10 @@ def _verified_root(label, verify_dates):
     from qmap_database.catalogue import Catalogue
     from qmap_database.storage import DataRoot
     root = support.new_temp_folder(label)
-    run_initial_load(root, [support.CONCOR_TXT, support.INFY_PARQUET])
+    source_folder = support.new_temp_folder(label + "_src")
+    shutil.copy2(support.CONCOR_TXT, source_folder)     # a temporary copy
+    run_initial_load(root, [os.path.join(source_folder, "CONCOR.txt"),
+                            support.INFY_PARQUET])
     catalogue = Catalogue(DataRoot(root).catalogue_path, read_only=True)
     try:
         ids = [row[0] for row in catalogue.continuity_issues_awaiting_owner()
@@ -94,7 +98,7 @@ def _verified_root(label, verify_dates):
                              % (len(verify_dates), len(ids)))
     for issue_id in ids:
         verify_continuity_issue(root, issue_id, "test: verified for T-EMA")
-    return root
+    return root, source_folder
 
 
 class TestEmaLogic(unittest.TestCase):
@@ -349,8 +353,8 @@ class TestEmaAfterOwnerVerification(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.root = _verified_root("ema_verified",
-                                  {date(2024, 6, 4), date(2006, 5, 15)})
+        cls.root, cls.source_folder = _verified_root(
+            "ema_verified", {date(2024, 6, 4), date(2006, 5, 15)})
 
     def test_t_ema_02_concor_bearish_reference(self):
         result = run_one(self.root, "CONCOR", "2026-11-06")
@@ -390,6 +394,33 @@ class TestEmaAfterOwnerVerification(unittest.TestCase):
         self.assertEqual(result["calculations"]["net"], -2)
         self.assertEqual(result["score"]["value"], 33.33)
         self.assertEqual(result["calculations"]["state"], "NEUTRAL")
+
+    def test_t_ema_14_held_revision_does_not_change_the_result(self):
+        from qmap_database.maintenance import run_update
+        before = run_one(self.root, "CONCOR", "2026-11-06")
+        path = os.path.join(self.source_folder, "CONCOR.txt")
+        with open(path, "rb") as handle:
+            content = handle.read()
+        # Revise one historical close (2010), as a source back-adjustment
+        # would; the revision must be HELD, never applied automatically.
+        line_start = content.index(b"2010-06-01,")
+        line_end = content.index(b"\n", line_start)
+        fields = content[line_start:line_end].rstrip(b"\r").split(b",")
+        fields[4] = b"%.2f" % (float(fields[4]) + 1.0)
+        content = (content[:line_start] + b",".join(fields) + b"\r"
+                   + content[line_end:])
+        with open(path, "wb") as handle:
+            handle.write(content)
+        result = run_update(self.root, [self.source_folder])
+        self.assertTrue(any(o.action == "HELD_REVISION"
+                            for o in result.file_outcomes),
+                        [o.action for o in result.file_outcomes])
+        after = run_one(self.root, "CONCOR", "2026-11-06")
+        self.assertEqual(after["status"], "OK")
+        self.assertEqual(after["facts"], before["facts"])
+        self.assertEqual(after["score"], before["score"])
+        self.assertTrue(any(m.startswith("HELD_REVISION_EXISTS")
+                            for m in after["status_messages"]))
 
     def test_other_occurrences_still_block(self):
         # Verifying 04-Jun-24 does not unblock 20-Mar-20 / 10-Aug-20.
