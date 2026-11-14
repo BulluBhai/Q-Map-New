@@ -6,20 +6,36 @@ Act as the Q-MAP implementation agent (Claude 1) and follow the approved reposit
 
 These instructions are operational guidance. They do not override the approved documents or grant permission to start implementation.
 
-## 2. Mandatory start gate — do not code before authorisation
+## 2. Authorisation status and current baseline
 
-The Project Owner has approved Design Package v1.10. That approval is **not** the same as authorisation to begin production implementation.
+The Project Owner has approved Design Package v1.10. Approval of a design is **not** by itself authorisation to implement it; every milestone still needs its own prerequisites and Owner decisions.
 
-- **Q-3 — explicit Owner authorisation: PENDING.** Do not begin Gate 0 or any implementation work until the Project Owner explicitly authorises Claude 1 to proceed. Do not infer authorisation from repository access, a successful document upload, an approved design package, a prior chat, or a request to review this repository.
-- **After Q-3 is authorised, Gate 0 work only is permitted.** Gate 0 is preparation and environment verification; it is not permission to begin M1a or write production application code.
-- **Gate 0 work is limited to:** prepare the root `requirements.txt` with exact `==` pins for `duckdb`, `pandas`, `pyarrow` and `openpyxl`, and prepare the IDLE-friendly T-ENV-01 environment-check script. Select exact package pins based on the Owner's Python 3.12.10 environment; do not guess or invent versions.
-- **Gate 0 acceptance:** the Owner runs T-ENV-01 in IDLE on the Owner's PC; `duckdb`, `pandas`, `pyarrow`, `openpyxl` and `tkinter` import successfully; the printed third-party package versions match `requirements.txt`; and the required machine-readable EV-12 evidence (`EV12_environment_<ts>.txt` plus `requirements.txt`) is produced. Gate 0 is complete only after the Owner confirms the printout came from the Owner's PC.
-- **M1a must not start until Gate 0 has been completed and accepted by the Owner.** Q-3 authorisation alone does not satisfy Gate 0. Gate 0 completion alone does not authorise any scope beyond the approved milestone sequence.
-- Until Q-3 is authorised, you may perform only work explicitly requested by the Owner that does not amount to Gate 0 or production implementation, such as reading documents, preparing a review, or clarifying a design conflict.
+- **Q-3 — explicit Owner authorisation: GIVEN.** The Owner authorised Claude 1 to implement, and on 14-Nov-26 directed the M1a–M3 work, the G-01 inventory and the laptop-readiness work listed below. Do not infer authorisation for anything further from repository access, an approved design, a prior chat or a request to review the repository.
+- **Gate 0:** the files are prepared (root `requirements.txt` with exact `==` pins for `duckdb`, `pandas`, `pyarrow` and `openpyxl`; the IDLE-friendly T-ENV-01 script `tests/t_env_01_environment_check.py`; the installer `tools/QMAP_Install_Requirements.py`). **Gate 0 acceptance is still outstanding:** the Owner must run T-ENV-01 in IDLE on the Owner's PC; `duckdb`, `pandas`, `pyarrow`, `openpyxl` and `tkinter` must import; the printed versions must match `requirements.txt`; the EV-12 evidence (`EV12_environment_<ts>.txt` plus `requirements.txt`) must be produced; and the Owner must confirm the printout came from the Owner's PC. Until then no milestone is accepted (G-15).
+
+### Current implementation baseline (`main` at `6f3d0c3cdf861f2ad5129dcb14202c6df111b80e`)
+
+| PR | Merge commit | Content |
+|---|---|---|
+| #7 | `10d125975d04f19ab59f31460c06acaac1fa3f65` | Gate 0 files, M1a, M1b, M2 (`QMapData` interface and timeframe aggregation), V-VOL-01 row-level volume correction |
+| #8 | `a6b7f180e02f6171e081717f7b54546ee5e71d66` | Data Manager G-03 verification (`VERIFIED_OK` preserved on unchanged reprocessing), data-summary export, IDLE installer, M2 example for every timeframe |
+| #10 | `15985070cd0676aecb21e3064feb198b31a9c2c2` | M3 EMA Trend Alignment scanner v0.9.0, engine contract, registry, run coordinator, JSON/Excel output |
+| #9 | `001e03a5ee1a03527b595876b2d4f0beaee92e9c` | G-01 read-only Stock Universe Inventory tool |
+| #11 | `6f3d0c3cdf861f2ad5129dcb14202c6df111b80e` | Owner's User Guide v1.0 (`docs/user_guides/`) |
+
+Last full test run: 181 tests, 0 failures, 0 errors, 0 skipped, on **Linux** with Python 3.12.10 and the exact pins (the PR #9 branch, tree identical to `main` after PR #9). This is development evidence only. **No test has been run on Windows yet.**
+
+### Outstanding
+
+- **D-EMA-11 and D-EMA-12 are proposals, not approved.** The scanner applies them provisionally, labels every result and stays below version 1.0.0. Never treat them as approved without the Owner's decision.
+- **M1c** is blocked until the Owner runs the inventory on the local stock folder, the inventory is reviewed (V-04) and the Owner approves the actual pilot list.
+- **M4** is not implemented and not approved for development (needs G-11). **M5** is not implemented (needs the approved scoring profile and weights, G-10).
+- ORB backtesting is future work. Broker connectivity, automatic trading, cloud synchronisation and AI interpretation are not available and must not be represented as available.
+- Owner actions: Windows testing, T-ENV-01/EV-12, verification of each ±15% occurrence (G-03), CAS and special-session confirmations.
 
 ## 3. Read the authoritative documents before acting
 
-At the start of a new session, read this file and `README.md`, then consult the repository documents relevant to the task. Before any implementation work is authorised, read at least:
+At the start of a new session, read this file and `README.md`, then consult the repository documents relevant to the task. Before implementation work, read at least:
 
 1. `docs/blueprints/Q-MAP_Human_Readable_Blueprint_v1.docx`.
 2. `docs/blueprints/Q-MAP_Technical_Blueprint_v1.md`.
@@ -27,6 +43,7 @@ At the start of a new session, read this file and `README.md`, then consult the 
 4. `docs/handover/Q-MAP_Claude1_Consolidated_Handover_v1.0_12_Nov_26_124620.md` in full, including Annex A and Annex B.
 5. The current-version design documents and the v1.2 verification package/workbook that apply to the authorised milestone.
 6. `docs/handover/Q-MAP_Claude2_Closeout_Report_12_Nov_26_124620.md` and the Owner Decision Register when checking outstanding decisions or responsibilities.
+7. `docs/user_guides/Q-MAP_Owners_User_Guide_v1.0_14_Nov_26.md` whenever a change affects what the Owner sees or does. Keep the guide consistent with the applications; a change to a screen, prompt, file name or behaviour needs a matching guide update.
 
 Do not rely on old chat context or stale copies of documents. The repository copy is the working reference. Preserve the supplied source documents unchanged. Never use, copy, inspect for implementation reuse, or rely on `old-Q-MAP-ignore` or any earlier Q-MAP repository/codebase. This is a fresh project and repository.
 
@@ -50,12 +67,12 @@ The Design Package Master Index identifies current document versions. Use the cu
 
 ## 5. Scope and milestone controls
 
-- Implement **P1 only**, and only after the start gates in section 2 are met.
+- Implement **P1 only**, and only work that the Owner has authorised (section 2).
 - P2/P3 items, future ideas and examples are not implementation authorisation.
 - Follow the approved sequence: `M1a → M1b → M2 → M1c → M3 → M4 → M5`. M6 follows M3; combined-score output portions follow M5.
 - OD-10 (M2 before M1b) is not adopted. Do not change the approved sequence without an explicit Owner decision.
-- M1c remains blocked until G-01 is explicitly authorised, V-04 inventory is completed and reviewed, and the Owner approves the actual pilot list.
-- M3 requires its stated prerequisites, including D-EMA-11 and D-EMA-12, and the approved milestone order unless the Owner records a different decision such as OD-12.
+- M1c remains blocked until the V-04 inventory has been run by the Owner on the local stock folder (G-01 is authorised and the tool is merged), the results are reviewed, and the Owner approves the actual pilot list.
+- M3 is implemented provisionally on the Owner's instruction of 14-Nov-26 while M1c is blocked. It cannot be accepted until D-EMA-11 and D-EMA-12 are decided and Gate 0 is accepted.
 - M4 requires the Owner's scanner selection (G-11). M5 requires the approved scoring profile and weights (G-10).
 - Never start a milestone because its design document exists. Check its readiness conditions and required Owner decisions first.
 
@@ -82,10 +99,10 @@ Follow the current approved technical blueprint and Design Package v1.10 as corr
 ## 7. Dependencies and environment
 
 - Use the Owner's Python 3.12.10 environment.
-- The approved third-party package set is `duckdb`, `pandas`, `pyarrow` and `openpyxl`; exact `==` pins must be established at Gate 0.
+- The approved third-party package set is `duckdb`, `pandas`, `pyarrow` and `openpyxl`, pinned exactly in `requirements.txt` (duckdb 1.5.6, pandas 2.3.3, pyarrow 26.0.1, openpyxl 3.1.5). `numpy` and other transitive dependencies are installed by pip and are not pinned; pinning them would need the Owner's approval.
 - Use the approved standard-library modules where needed. Do not add third-party packages without the Owner's approval and an explicit design justification.
 - Tests run only against the exact pinned versions. Results from a different Python or package version are not acceptance evidence.
-- `requirements.txt` belongs at the repository root and is prepared during the authorised Gate 0 work only. Claude 1 must select and record exact `==` pins based on the Owner's Python 3.12.10 environment; do not guess or invent version pins. The Owner's IDLE T-ENV-01 run and EV-12 confirmation are required to close Gate 0.
+- `requirements.txt` is at the repository root. Do not change a pin or add a package without the Owner's approval. The Owner's IDLE T-ENV-01 run and EV-12 confirmation are required to close Gate 0.
 
 ## 8. Data handling, sample fixtures and repository hygiene
 
@@ -104,7 +121,8 @@ Follow the current approved technical blueprint and Design Package v1.10 as corr
   - `Nifty_daily_02Jan23-30Oct26.parquet`
   - `Nifty_monthly_02Jan23-30Oct26.parquet`
 - `INFY.txt` was never supplied and is not approved. Preserve approved fixture filenames and contents exactly. Tests must read fixtures in place or use a temporary copy; never modify the originals. Verify fixture SHA-256 values against Annex B of the Consolidated Handover.
-- Do not commit production/full-universe market data, live DuckDB files or journals, backups, logs, generated reports, scanner run outputs or evidence exports.
+- Do not commit production/full-universe market data, live DuckDB files or journals, backups, logs, generated reports, scanner run outputs, inventory workbooks, `EV12_environment_*.txt` files or evidence exports.
+- The applications save local settings (including the Owner's data-root path) in `config/settings.json` inside the program folder. That file is local to each PC and must never be committed.
 - Evidence exports are submitted to ChatGPT with milestone evidence; they do not belong in the repository.
 - Machine-readable evidence timestamps must use `YYYY-MM-DD HH:MM:SS` as IST wall-clock time, with no UTC conversion or offset, as approved by the Owner.
 - Never commit passwords, API keys, tokens, `.env` files, private keys, credentials or confidential information. This repository is public.
@@ -121,7 +139,7 @@ When implementation is authorised:
 - Make small, focused changes. Do not add unrequested files or refactor unrelated modules.
 - Keep calculations deterministic and reproducible. Preserve full precision in stored results where the specifications require it; apply display rounding only as specified.
 - Use the approved `unittest` approach and test catalogue. Add or update focused tests for changed behaviour, plus relevant regression tests.
-- Run tests on the exact pinned environment. State exactly which tests were executed and their results. Never claim a test passed if it was not run on the implementation.
+- Run tests on the exact pinned environment with `python tests/run_all_tests.py` (it prints the environment and flags any mismatch). State exactly which tests were executed, the Python version and the operating system, and the results. Never claim a test passed if it was not run on the implementation, and never present Linux results as Windows validation.
 - A program that starts or passes unit tests is not sufficient. Compare required calculations against the independently verified reference results and provide the specified evidence.
 - Do not modify original fixtures or source data during tests.
 
