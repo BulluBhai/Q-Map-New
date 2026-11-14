@@ -516,11 +516,12 @@ def _missing_day_checks(catalogue, logger, run_id, dates_by_instrument):
         missing = sorted(d for d in trading_days
                          if first <= d <= last and d not in own)
         for day in missing:
+            day_ts = datetime.combine(day, datetime.min.time())
             catalogue.add_issue(IssueRecord(
                 "V-CAL-02", validation.SEVERITY_WARNING,
                 "%s %s: no data on a day other instruments traded "
                 "(MISSING_DAY; may be a stock suspension)"
-                % (instrument_id, day)),
+                % (instrument_id, day), ts_from=day_ts, ts_to=day_ts),
                 instrument["dataset_id"], instrument_id, run_id)
         if missing:
             logger.info("%s: %d missing day(s) inside its range",
@@ -1509,3 +1510,248 @@ def restore_from_backup(data_root_path, backup_path, live_log=None):
     if live_log:
         live_log("catalogue restored from %s" % backup_path)
     return run_integrity_check(data_root_path, live_log=live_log)
+
+
+# =============================================================================
+# M2 - machine-readable evidence EV-05 to EV-10 (Verification Package v1.2
+# section 10). Timestamps follow TS-01; nulls are empty fields; booleans are
+# TRUE/FALSE; prices keep full precision with no thousands separators.
+# =============================================================================
+
+def _evidence_bars_csv(result, path):
+    """Write a BarResult's bars in the evidence format."""
+    frame = result.bars.copy()
+    for column in ("ts", "source_ts"):
+        if column in frame.columns:
+            frame[column] = pd.to_datetime(frame[column]).dt.strftime(
+                EVIDENCE_TS_FORMAT)
+    for column in ("is_complete", "is_forming", "session_truncated",
+                   "volume_complete"):
+        if column in frame.columns:
+            frame[column] = frame[column].map(
+                lambda value: "TRUE" if bool(value) else "FALSE")
+    frame.to_csv(path, index=False)
+
+
+def _evidence_meta_json(result, path):
+    import json
+
+    def plain(value):
+        if hasattr(value, "strftime"):
+            return value.strftime(EVIDENCE_TS_FORMAT)
+        if isinstance(value, (list, tuple)):
+            return [plain(item) for item in value]
+        if isinstance(value, dict):
+            return {key: plain(item) for key, item in value.items()}
+        if hasattr(value, "item"):
+            return value.item()
+        return value
+
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({key: plain(value) for key, value in result.meta.items()},
+                  handle, indent=2)
+
+
+def export_m2_evidence(data_root_path, output_folder):
+    """Write EV-05 to EV-10. Returns the list of files written."""
+    from .access import DataRequirement, QMapData
+    from .errors import QMapDataError
+
+    os.makedirs(output_folder, exist_ok=True)
+    suffix = timestamp_suffix()
+    written = []
+
+    def out(name):
+        path = os.path.join(output_folder, name)
+        written.append(path)
+        return path
+
+    incomplete_frames = []
+
+    def export_bars(file_stem, result, collect_incomplete=False):
+        _evidence_bars_csv(result, out("%s_%s.csv" % (file_stem, suffix)))
+        _evidence_meta_json(result, out("%s_meta_%s.json"
+                                        % (file_stem, suffix)))
+        if collect_incomplete:
+            bars = result.bars
+            candles = bars[~bars["record_type"].isin(["AUCTION_PHASE",
+                                                      "CLOSING_AUCTION"])]
+            incomplete = candles[~candles["is_complete"].astype(bool)].copy()
+            if len(incomplete):
+                incomplete.insert(0, "timeframe", result.meta["timeframe"])
+                incomplete.insert(0, "instrument_id",
+                                  result.meta["instrument_id"])
+                incomplete_frames.append(incomplete)
+
+    with QMapData(data_root_path) as db:
+        # EV-05 and EV-06: the four reference days.
+        for instrument_id, day, ev in (("NIFTY", "2026-08-17", "EV05"),
+                                       ("BANKNIFTY", "2026-08-19", "EV06")):
+            for timeframe in ("5m", "15m"):
+                result = db.get_bars(instrument_id, timeframe, day, day)
+                export_bars("%s_bars_%s_%s_%s"
+                            % (ev, instrument_id, timeframe,
+                               day.replace("-", "")), result)
+
+        # EV-07: full daily output per instrument.
+        for row in db.list_instruments().itertuples():
+            result = db.get_bars(row.instrument_id, "1D")
+            export_bars("EV07_bars_%s_1D_all" % row.instrument_id, result)
+
+        # EV-08: whole-sample aggregation (and EV-09's inputs).
+        for instrument_id, timeframes in (("NIFTY", ("3m", "5m", "15m",
+                                                     "1MO")),
+                                          ("BANKNIFTY", ("5m", "15m"))):
+            for timeframe in timeframes:
+                result = db.get_bars(instrument_id, timeframe)
+                export_bars("EV08_bars_%s_%s_all" % (instrument_id,
+                                                     timeframe), result,
+                            collect_incomplete=timeframe in ("5m", "15m"))
+
+        # EV-09: every incomplete 5m/15m bar in the whole sample.
+        if incomplete_frames:
+            frame = pd.concat(incomplete_frames, ignore_index=True)
+            frame["ts"] = pd.to_datetime(frame["ts"]).dt.strftime(
+                EVIDENCE_TS_FORMAT)
+            frame.to_csv(out("EV09_incomplete_bars_%s.csv" % suffix),
+                         index=False)
+
+        # EV-10: the DA-1 to DA-24 results.
+        rows = []
+
+        def record(case_id, call_text, outcome, detail=""):
+            rows.append({"case": case_id, "call": call_text,
+                         "outcome": outcome, "detail": detail})
+
+        def bars_case(case_id, call_text, **kwargs):
+            try:
+                result = db.get_bars(**kwargs)
+                record(case_id, call_text,
+                       result.status,
+                       "rows=%d; warnings=%s; notes=%s"
+                       % (len(result.bars),
+                          "|".join(sorted(w["code"]
+                                          for w in result.meta["warnings"])),
+                          "|".join(result.meta["notes"])))
+            except QMapDataError as error:
+                record(case_id, call_text, type(error).__name__, str(error))
+
+        bars_case("DA-1", "NIFTY 5m 2026-08-17", instrument_id="NIFTY",
+                  timeframe="5m", start="2026-08-17", end="2026-08-17")
+        bars_case("DA-2", "DA-1 without auction rows", instrument_id="NIFTY",
+                  timeframe="5m", start="2026-08-17", end="2026-08-17",
+                  include_auction_records=False)
+        bars_case("DA-3", "BANKNIFTY 5m 2026-08-19",
+                  instrument_id="BANKNIFTY", timeframe="5m",
+                  start="2026-08-19", end="2026-08-19")
+        bars_case("DA-4", "BANKNIFTY 15m 2026-08-19",
+                  instrument_id="BANKNIFTY", timeframe="15m",
+                  start="2026-08-19", end="2026-08-19")
+        bars_case("DA-5", "CONCOR 1D latest_n=5 close",
+                  instrument_id="CONCOR", timeframe="1D", latest_n=5,
+                  fields=["close"])
+        try:
+            db.get_bars("NIFTI", "5m")
+        except QMapDataError as error:
+            record("DA-6", "NIFTI", type(error).__name__, str(error))
+        try:
+            db.list_instruments(dataset_id="NSE_FUT_1M")
+        except QMapDataError as error:
+            record("DA-7", "list_instruments(NSE_FUT_1M)",
+                   type(error).__name__, str(error))
+        bars_case("DA-8", "NIFTY 5m 2026-01-26", instrument_id="NIFTY",
+                  timeframe="5m", start="2026-01-26", end="2026-01-26")
+        bars_case("DA-9", "NIFTY 5m 2024-06-03..07", instrument_id="NIFTY",
+                  timeframe="5m", start="2024-06-03", end="2024-06-07")
+        bars_case("DA-10", "BANKNIFTY 1D Aug-26", instrument_id="BANKNIFTY",
+                  timeframe="1D", start="2026-08-01", end="2026-08-31")
+        bars_case("DA-11", "NIFTY 1D Jan-25 close+volume",
+                  instrument_id="NIFTY", timeframe="1D", start="2025-01-09",
+                  end="2025-01-31", fields=["close", "volume"])
+        try:
+            db.get_bars("CONCOR", "1D", fields=["oi"])
+        except QMapDataError as error:
+            record("DA-12", "CONCOR fields oi", type(error).__name__,
+                   str(error))
+
+        def availability_case(case_id, call_text, requirement):
+            report = db.check_availability(requirement)
+            record(case_id, call_text, report.status,
+                   "reasons=%s; missing=%s; estimated_bars=%d"
+                   % ("|".join(sorted(reason["code"]
+                                      for reason in report.reasons)),
+                      ",".join(report.missing_fields),
+                      report.estimated_bars))
+            _evidence_availability_json(report, out(
+                "EV10_%s_availability_%s.json" % (case_id, suffix)))
+
+        availability_case("DA-13", "NIFTY 5m Jan-25 volume required",
+                          DataRequirement("NIFTY", "5m", "2025-01-09",
+                                          "2025-01-31",
+                                          required_fields=("close",
+                                                           "volume")))
+        try:
+            db.get_bars("CONCOR", "15m")
+        except QMapDataError as error:
+            record("DA-14", "CONCOR 15m", type(error).__name__, str(error))
+        try:
+            db.get_bars("NIFTY", "7m")
+        except QMapDataError as error:
+            record("DA-15", "NIFTY 7m", type(error).__name__, str(error))
+        try:
+            db.get_bars("NIFTY", "5m", "2026-09-30", "2026-09-01")
+        except QMapDataError as error:
+            record("DA-16", "start after end", type(error).__name__,
+                   str(error))
+        bars_case("DA-17", "NIFTY 5m 2025-10-21", instrument_id="NIFTY",
+                  timeframe="5m", start="2025-10-21", end="2025-10-21")
+        bars_case("DA-18", "BANKNIFTY 5m 2026-11-08",
+                  instrument_id="BANKNIFTY", timeframe="5m",
+                  start="2026-11-08", end="2026-11-08")
+        bars_case("DA-19", "BANKNIFTY 15m 2026-11-08",
+                  instrument_id="BANKNIFTY", timeframe="15m",
+                  start="2026-11-08", end="2026-11-08")
+        bars_case("DA-20", "NIFTY 5m 2026-08-14..17", instrument_id="NIFTY",
+                  timeframe="5m", start="2026-08-14", end="2026-08-17")
+        availability_case("DA-21", "NIFTY 1D 10-21 Aug volume required",
+                          DataRequirement("NIFTY", "1D", "2026-08-10",
+                                          "2026-08-21",
+                                          required_fields=("close",
+                                                           "volume")))
+        availability_case("DA-22", "NIFTY 1D 17-21 Aug volume required",
+                          DataRequirement("NIFTY", "1D", "2026-08-17",
+                                          "2026-08-21",
+                                          required_fields=("close",
+                                                           "volume")))
+        availability_case("DA-23", "NIFTY 1D Jan-25 volume optional",
+                          DataRequirement("NIFTY", "1D", "2025-01-09",
+                                          "2025-01-31"))
+        instruments = db.list_instruments(dataset_id="NSE_INDEX_1M")
+        record("DA-24", "list_instruments(NSE_INDEX_1M)", "OK",
+               ",".join(instruments["instrument_id"].tolist()))
+
+        pd.DataFrame(rows).to_csv(out("EV10_da_results_%s.csv" % suffix),
+                                  index=False)
+    return written
+
+
+def _evidence_availability_json(report, path):
+    import json
+
+    def plain(value):
+        if hasattr(value, "strftime"):
+            return value.strftime(EVIDENCE_TS_FORMAT)
+        if hasattr(value, "item"):
+            return value.item()
+        return value
+
+    payload = {"status": report.status, "reasons": report.reasons,
+               "available_start": plain(report.available_start),
+               "available_end": plain(report.available_end),
+               "estimated_bars": int(report.estimated_bars),
+               "missing_fields": list(report.missing_fields),
+               "continuity_issues": [
+                   {key: plain(value) for key, value in issue.items()}
+                   for issue in report.continuity_issues]}
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2)

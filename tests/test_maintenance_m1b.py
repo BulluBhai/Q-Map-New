@@ -360,9 +360,25 @@ class TestIncrementalUpdate(unittest.TestCase):
             backup_con.close()
         self.assertEqual(runs, 0)
 
-    def test_t_mnt_09_scanner_run_never_rebuilds(self):
-        self.skipTest("the analytical engine arrives at M3; the read-only "
-                      "interface at M2 - re-tested then")
+    def test_t_mnt_09_reader_never_rebuilds(self):
+        """M2 form of T-MNT-09: reading through QMapData creates no
+        maintenance run and writes no data file. The scanner-run form is
+        re-tested at M3 when the engine exists."""
+        from qmap_database.access import QMapData
+        root, _, _ = _concor_setup()
+        runs_before = _catalogue_facts(root, "SELECT count(*) FROM "
+                                             "maintenance_run")[0][0]
+        files_before = _data_file_facts(root, "CONCOR")
+        db = QMapData(root)
+        try:
+            db.get_bars("CONCOR", "1D", latest_n=5)
+            db.get_bars("CONCOR", "1MO")
+        finally:
+            db.close()
+        self.assertEqual(_catalogue_facts(root, "SELECT count(*) FROM "
+                                                "maintenance_run")[0][0],
+                         runs_before)
+        self.assertEqual(_data_file_facts(root, "CONCOR"), files_before)
 
     def test_t_mnt_10_retention_never_removes_needed_generation(self):
         folder = support.new_temp_folder("mnt10_src")
