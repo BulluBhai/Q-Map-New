@@ -72,6 +72,17 @@ class ScrollableFrame(tk.Frame):
             pass
 
 
+def _is_inside(path, folder):
+    """True when path is folder or lies inside it. Case-insensitive on
+    Windows, and a sibling such as D:\\QMAP_DATA_out is not 'inside'."""
+    path = os.path.normcase(os.path.abspath(path))
+    folder = os.path.normcase(os.path.abspath(folder))
+    try:
+        return os.path.commonpath([path, folder]) == folder
+    except ValueError:                     # different drives on Windows
+        return False
+
+
 # --- Main logic -----------------------------------------------------------------
 class DataManagerApp(tk.Tk):
 
@@ -644,7 +655,7 @@ class DataManagerApp(tk.Tk):
                   "root)")
         if not folder:
             return
-        if os.path.abspath(folder).startswith(os.path.abspath(data_root)):
+        if _is_inside(folder, data_root):
             messagebox.showerror(WINDOW_TITLE, "Please choose a folder "
                                                "outside the data root.")
             return
