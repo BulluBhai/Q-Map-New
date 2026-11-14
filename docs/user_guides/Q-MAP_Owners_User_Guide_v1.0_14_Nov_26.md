@@ -34,9 +34,9 @@ Use the repository's `main` branch:
 
 [Open Q-MAP on GitHub](https://github.com/BulluBhai/Q-Map-New)
 
-For a fresh copy, open the repository page, select **Code**, then **Download ZIP**. Extract the ZIP to a normal folder on your PC, for example:
+For a fresh copy, open the repository page, make sure the branch selector shows **main**, select **Code**, then **Download ZIP**. The ZIP contains one folder named `Q-Map-New-main`. Extract it to a normal folder on your PC, for example:
 
-`D:\\Q-MAP\\Q-Map-New\\`
+`D:\Q-MAP\Q-Map-New-main\`
 
 Do not extract it inside your live market-data folder.
 
@@ -46,7 +46,7 @@ When a new version is issued, download and extract that latest version separatel
 
 Choose a separate folder for Q-MAP's working database, for example:
 
-`D:\\QMAP_DATA\\`
+`D:\QMAP_DATA\`
 
 This is called the **Q-MAP data root**. It is where Q-MAP stores the catalogue, imported market data, quarantined rows, backups, reports and logs.
 
@@ -75,23 +75,23 @@ You do not need to type installation commands into a command window.
 
 1. Open the extracted Q-MAP folder.
 2. Open the `tools` folder.
-3. Right-click `QMAP_Install_Requirements.py` and choose **Edit with IDLE**. If that option is not shown, open IDLE first and use **File → Open...** to select the file.
+3. Right-click `QMAP_Install_Requirements.py` and choose **Edit with IDLE** (on Windows 11 it may be under **Show more options**). If that option is not shown, open IDLE first and use **File → Open...** to select the file.
 4. In the IDLE editor window, press **F5** (or choose **Run → Run Module**).
 5. Look at the IDLE Shell. The installer prints the installation messages.
 6. Wait until it says **Done**. If it reports an error or a non-zero exit code, stop and keep the complete Shell output for review.
 
-The installer checks that it is running under Python 3.12.10. It uses the same Python installation as the IDLE window that opened it.
+The installer checks that it is running under Python 3.12.10. If it prints a **WARNING** that Q-MAP requires Python 3.12.10, it installs nothing: open the file with the IDLE that belongs to Python 3.12.10 and run it again. It uses the same Python installation as the IDLE window that opened it.
 
 ### 2.5 Check your Python environment
 
 Before opening the applications, run the environment check:
 
 1. In IDLE, choose **File → Open...**.
-2. Open `tests\\t_env_01_environment_check.py` from the Q-MAP folder.
+2. Open `tests\t_env_01_environment_check.py` from the Q-MAP folder.
 3. Press **F5**.
 4. Read the IDLE Shell output.
 
-You should see Python **3.12.10**, the four package versions matching the table above, Tkinter available, and:
+You should see `python_match: TRUE`, a `_match: TRUE` line for each of the four packages, a `tkinter_installed:` line showing a version number (for example `8.6`), and finally:
 
 `all_environment_checks_match: TRUE`
 
@@ -123,7 +123,7 @@ Do not start with your entire historical archive. The first run is intended to c
 
 Open:
 
-`apps\\QMAP_Data_Manager.py`
+`apps\QMAP_Data_Manager.py`
 
 In IDLE, open the file and press **F5**.
 
@@ -147,11 +147,11 @@ For an initial test, choose only a small number of files you understand. Select 
 
 This is the location where Q-MAP creates and maintains its database.
 
-Click **Browse...** and choose your separate data-root folder, for example `D:\\QMAP_DATA\\`.
+Click **Browse...** and choose your separate data-root folder, for example `D:\QMAP_DATA\`.
 
 The folder must be outside the extracted GitHub repository.
 
-The application remembers the selected data root in its local settings, so you may see it filled in the next time you open the program. Always check that it is the intended folder before running an operation.
+The data root is remembered once you run **Run initial load** or **Run update** with it. It is saved in `config\settings.json` inside the program folder, and the M2 Example and the EMA Scanner use the same saved value. A freshly extracted ZIP starts with no saved data root. Always check that the folder shown is the intended one before running an operation.
 
 ### 4.4 Section 3 — Options
 
@@ -196,7 +196,7 @@ Choose a folder containing changed or newly received source files. You can add m
 
 **Clear folders**
 
-Removes the selected folders from the update list. It does not delete those folders or their files.
+Empties the whole update-folder list (not just the highlighted entries). It does not delete those folders or their files.
 
 **Run update**
 
@@ -219,7 +219,7 @@ A clean integrity result is expected. If it reports a problem, keep the complete
 
 Use this only when a catalogue restore is genuinely required and you know which backup you intend to restore.
 
-The application asks you to choose a catalogue backup file, normally from the data-root folder under `backups\\catalogue\\`. It asks for confirmation before restoring.
+The application asks you to choose a catalogue backup file, normally from the data-root folder under `backups\catalogue\`. It asks for confirmation before restoring.
 
 Close every **other** Q-MAP program before a restore; leave the Data Manager open because it is the program performing the restore. After restoring, it runs an integrity check.
 
@@ -250,9 +250,9 @@ The two times are the session open and close in `HH:MM` format. If the close is 
 
 **Confirm selected... — G-03 continuity issue**
 
-For a G-03 continuity issue, the program asks for a written basis before marking that particular occurrence **VERIFIED_OK**. Only verify a move after checking the original data and the reason for the move. The program records your explanation as evidence. Verifying one occurrence does not automatically verify every other large move in the same stock.
+For a G-03 continuity issue, the program asks for a written basis before marking that particular occurrence **VERIFIED_OK**. Only verify a move after checking the original data and the reason for the move. The program takes a catalogue backup, then records your decision and your explanation as evidence. The stored prices are not changed. Verifying one occurrence does not automatically verify every other large move in the same stock, and a later update of the same unchanged history does not re-open it.
 
-These confirmation actions re-validate the affected data. If you are unsure, leave the item awaiting your decision.
+The CAS and special-session confirmations re-validate the affected intraday data. A G-03 verification does not re-validate anything; it simply stops that one occurrence blocking calculations such as the EMA Scanner. If you are unsure, leave the item awaiting your decision.
 
 **Approve held revision**
 
@@ -260,7 +260,7 @@ Use this only when you have reviewed the changed historical source and explicitl
 
 **Reject held revision**
 
-Use this when you decide that the proposed historical revision should not be applied. The held source is retained as evidence and marked as rejected.
+Use this when you decide that the proposed historical revision should not be applied. The program asks for a reason, which is kept as evidence. The held data is retained, the active data is unchanged, and the same source file is not offered to you again.
 
 Do not approve or reject a revision just to clear the list. If you are uncertain, leave it awaiting your decision.
 
@@ -268,15 +268,23 @@ Do not approve or reject a revision just to clear the list. If you are uncertain
 
 Open:
 
-`apps\\QMAP_M2_Example.py`
+`apps\QMAP_M2_Example.py`
 
 Run it from IDLE using **F5**.
 
-The program asks you to choose the Q-MAP data root created by the Data Manager, unless it can use a saved data-root setting.
+It has no window of its own: the results are printed in the IDLE Shell. If a data root has been saved by the Data Manager (section 4.3), it uses that folder and prints "Using the saved data root: ..."; otherwise it asks you to choose the data root.
 
-It prints example data retrieval results for NIFTY, BANKNIFTY and CONCOR. It demonstrates 5-minute data, daily data, incomplete-bar handling, a deliberate unsupported-timeframe error, and timeframe aggregation using the stored source data. This is a demonstration, not a separate data importer or scanner.
+It prints fixed examples built around the sample data:
+1. the list of instruments in the database;
+2. NIFTY 5-minute bars for 17 Aug 26;
+3. BANKNIFTY 5-minute bars for 19 Aug 26, including an incomplete 13:25 bar;
+4. CONCOR's latest five daily closes;
+5. a deliberate unsupported-timeframe error and its message;
+6. the same data at every supported timeframe, from 1 minute to monthly: NIFTY on 18 Aug 26, NIFTY for Aug–Oct 26, and CONCOR for Sep–Oct 26.
 
-If it reports that no data root was selected, choose the correct folder and run it again. If it reports missing instruments or no bars, first check whether the relevant data was actually imported.
+Each example runs separately. If your database does not contain that instrument or those dates, that example prints "Not shown - ..." with the reason and the next example continues. The program only reads: it does not change the database. It is a demonstration, not a data importer or scanner.
+
+If it reports that no data root was selected, choose the correct folder and run it again.
 
 ## 6. Q-MAP Universe Inventory — inspect your stock folder
 
@@ -284,7 +292,7 @@ If it reports that no data root was selected, choose the correct folder and run 
 
 Open:
 
-`tools\\QMAP_Universe_Inventory.py`
+`tools\QMAP_Universe_Inventory.py`
 
 Run it from IDLE using **F5**.
 
@@ -310,7 +318,7 @@ The suggested filename looks like:
 
 `Q-MAP_Universe_Inventory_14_Nov_26_153000.xlsx`
 
-Save it outside the source-data folder and outside the Q-MAP repository.
+Save it outside the source-data folder (the program refuses a location inside the folder being inspected) and outside the Q-MAP program folder.
 
 ### 6.4 Section 3 — Options
 
@@ -343,7 +351,7 @@ The workbook contains 12 sheets:
 | Problems | Unsupported, unreadable, empty or otherwise problematic files |
 | Universe_Calendar | Dates and how many files have data on each date |
 | Large_Moves | Large open or close moves for review |
-| Moves_By_Date | Dates grouped by the number of large moves |
+| Moves_By_Date | For each date with a large move, how many files show one (many files on one date suggests a market-wide event) |
 | Absences_For_Review | Periods where a stock has no file data, for review |
 | Coverage | Coverage and naming checks |
 | Pilot_Eligibility | Eligibility flags for later review |
@@ -368,7 +376,7 @@ Do not delete source files or resolve conflicts solely on the basis of an invent
 
 Open:
 
-`apps\\QMAP_EMA_Scanner.py`
+`apps\QMAP_EMA_Scanner.py`
 
 Run it from IDLE using **F5**.
 
@@ -386,7 +394,9 @@ It creates two files for each run:
 
 Choose the same Q-MAP data root that you used in the Data Manager.
 
-Click **Load stock list**. The scanner reads the daily stock instruments available in that database and lists them.
+Click **Load stock list**. The scanner lists the daily stock instruments registered in that database. If a data root has been saved by the Data Manager, the list loads automatically when the window opens.
+
+CONCOR and INFY are registered in every new database, so they appear in the list even if you have not imported their files. A stock without imported data gives the status **NOT_APPLICABLE** with the message "... has no loaded data yet. Run the Data Manager's Initial load first."
 
 When the list loads, the application automatically selects **all** listed stocks. The count shows how many are selected. The **Select all** button selects them all again.
 
@@ -396,7 +406,7 @@ For your first test, do not accidentally run the full universe. Click the one st
 
 Click **Browse...** and select an output folder.
 
-Use a separate folder for scanner reports. Do not choose the Q-MAP repository or the database's internal storage folders.
+Use a separate folder for scanner reports. A folder inside the Q-MAP data root is refused. Do not choose the Q-MAP program folder either.
 
 ### 7.4 Section 3 — Options
 
@@ -416,11 +426,11 @@ When the stock list is loaded, the application fills the date field with the lat
 
 **Add the reference check (documented CONCOR/INFY cases, doc 10 B9.3 / doc 13)**
 
-This is selected by default. It adds a **Reference_Check** sheet comparing the documented CONCOR and INFY cases with the scanner's actual results.
+This is selected by default. It always runs the 11 documented CONCOR and INFY cases (whatever stocks you selected) and adds a **Reference_Check** sheet comparing them with the documented results.
 
-For the first run, leave it selected. It provides a useful comparison against the documented reference cases.
+Leave it selected only when CONCOR and INFY daily history has been imported into this data root. If either is missing, its rows show NOT_APPLICABLE and the verdict **DIFFERENT**; that is expected and is not a scanner fault. **MATCH** is expected when the imported CONCOR and INFY files contain the same history as the documented reference files (data to 06-Nov-26). While the CONCOR large moves are unverified, several CONCOR cases are expected to be INVALID_DATA, and that counts as a MATCH.
 
-**Add the 800-row EMA table per result (for Excel detail)**
+**Add the 800-row EMA table per result (for Excel verification, doc 10 B9.2)**
 
 This is also selected by default. It adds a detailed table for each result showing the daily close and EMA values through the 800-row analysis window.
 
@@ -452,7 +462,7 @@ The files look like:
 
 The Excel workbook contains these main sheets:
 - **Summary** — number of runs and results, status counts, and explicit notes about provisional rules and combined scoring.
-- **Scanner_Results** — one row per stock/date, including status, score, state, the six comparison signals, EMA values and messages.
+- **Scanner_Results** — one row per stock/date, including status, score, state, the six comparison signals, EMA values and messages. When the reference check is selected, the reference cases also appear here as rows.
 - **Reference_Check** — appears when the reference-check option is selected.
 - **Data_Warnings** — data warnings and issues connected to the results.
 - **Run_Settings** — the settings and dates used in the run.
@@ -462,7 +472,7 @@ The JSON file stores full-precision values and includes a SHA-256 integrity valu
 
 ### 7.7 Understanding the scanner's score and status
 
-The score is on a 0–100 scale and represents how many of six bullish trend-alignment checks are positive:
+The score is on a 0–100 scale and is built from six trend-alignment comparisons:
 - close above EMA 20;
 - close above EMA 50;
 - close above EMA 200;
@@ -510,7 +520,7 @@ Do not expect a combined score from the current EMA scanner. A second scanner an
 | A package is missing or its version differs | Run the installer from the correct IDLE. Repeat the environment check. If it still differs, preserve the output and stop. |
 | Data Manager says to choose a data root | Click **Browse...** in section 2 and select the correct Q-MAP data root. |
 | Data Manager says to add at least one source file | Click **Add files...** and select the files you intend to import. |
-| Scanner stock list is empty | Confirm that daily stock data has been imported into the selected data root. |
+| A stock's status is NOT_APPLICABLE ("has no loaded data yet") | That stock is registered but its data has not been imported into this data root. Import it with the Data Manager first. |
 | Scanner says to choose an output folder | Use **Browse...** and select an existing folder for the reports. |
 | Scanner says to choose at least one stock and one analysis date | Select one or more stocks and enter a date. |
 | Scanner reports INVALID_DATA | A continuity-blocking G-03 issue overlaps the 800-bar analysis window. Read the issue details and resolve it only through the Owner verification process; do not bypass it. |
@@ -563,9 +573,11 @@ Do not send passwords, access tokens or private account information. Do not emai
 
 ## 12. Current baseline and testing status
 
-This guide is written against GitHub `main` at commit:
+This guide describes the application code on GitHub `main` at commit:
 
 `001e03a5ee1a03527b595876b2d4f0beaee92e9c`
+
+The guide itself was added by PR #11, which changed no application code.
 
 Merged changes:
 - PR #8 — Data Manager G-03 verification, data-summary export and IDLE installer.
