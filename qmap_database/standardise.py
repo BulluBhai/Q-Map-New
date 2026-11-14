@@ -50,7 +50,8 @@ class StandardisedData:
 def _empty_quarantine(intraday):
     time_col = "ts" if intraday else "trade_date"
     return pd.DataFrame(columns=[time_col, "open", "high", "low", "close",
-                                 "volume", "source_row", "reason_code"])
+                                 "volume", "volume_invalid_text", "source_row",
+                                 "reason_code"])
 
 
 def _quarantine_rows(frame, mask, reason, store):
@@ -60,8 +61,12 @@ def _quarantine_rows(frame, mask, reason, store):
         return frame, store
     taken["reason_code"] = reason
     keep_cols = [c for c in store.columns if c in taken.columns] + ["reason_code"]
-    store = pd.concat([store, taken[list(dict.fromkeys(keep_cols))]],
-                      ignore_index=True)
+    taken = taken[list(dict.fromkeys(keep_cols))]
+    if len(store) == 0:
+        # Avoid pandas' deprecated concat-with-empty dtype behaviour.
+        store = taken.reset_index(drop=True)
+    else:
+        store = pd.concat([store, taken], ignore_index=True)
     return frame.loc[~mask].copy(), store
 
 
@@ -73,6 +78,9 @@ def _split_duplicates(frame, key_column, store, notes):
         return frame, store, collapsed
 
     value_cols = _PRICE_COLUMNS + ["volume"]
+    if "volume_invalid_text" in frame.columns:
+        # Two rows whose invalid volume texts differ are not exact duplicates.
+        value_cols = value_cols + ["volume_invalid_text"]
     conflict_keys = []
     for key, group in frame[frame[key_column].duplicated(keep=False)].groupby(
             key_column):

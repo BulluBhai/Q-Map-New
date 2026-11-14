@@ -57,7 +57,7 @@ class TestReaders(unittest.TestCase):
         self.assertGreaterEqual(len(result.ignored_columns), 18)
         self.assertEqual(list(result.frame.columns),
                          ["ts", "open", "high", "low", "close", "volume",
-                          "source_row"])
+                          "volume_invalid_text", "source_row"])
 
     @unittest.skipUnless(os.path.exists(support.NIFTY_1MIN), "sample absent")
     def test_t_file_04_unreadable_file(self):

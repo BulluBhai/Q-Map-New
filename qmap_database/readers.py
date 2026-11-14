@@ -11,6 +11,7 @@ Readers never write files.
 
 # --- Imports -----------------------------------------------------------------
 import hashlib
+import math
 import os
 from collections import Counter
 from dataclasses import dataclass, field
@@ -85,22 +86,71 @@ def _require_price_columns(columns, file_name):
     return mapping
 
 
-def _to_nullable_volume(series):
-    """Convert a volume column to nullable Int64 without inventing values."""
-    if series is None:
-        return None
+def _is_blank_volume(value):
+    """True only for genuinely missing volume: null, NaN or empty text."""
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return value.strip() == ""
     try:
-        return series.astype("Int64")
+        return bool(pd.isna(value))
     except (TypeError, ValueError):
-        # Fractional or textual volumes cannot be whole numbers; let the
-        # row-level V-VOL-01 check see them by keeping the raw values.
-        numeric = pd.to_numeric(series, errors="coerce")
-        whole = numeric.dropna() % 1 == 0
-        if whole.all():
-            return numeric.astype("Int64")
-        raise FileImportError(
-            "volume column contains non-numeric or fractional values",
-            check_code="V-FILE-01")
+        return False
+
+
+def parse_volume_values(values):
+    """Parse raw volume values row by row (V-VOL-01, V-VOL-02).
+
+    Returns (volume, invalid_text):
+    - volume: nullable Int64; null where the volume is genuinely missing
+      (accepted, D-03) and also where it is invalid;
+    - invalid_text: the original value as text for rows whose volume is
+      non-numeric, non-finite, fractional or negative, otherwise None.
+      Validation quarantines those rows with reason BAD_VOLUME and keeps this
+      text as evidence. Nothing is rounded, coerced or filled."""
+    parsed = []
+    invalid = []
+    for value in values:
+        if _is_blank_volume(value):
+            parsed.append(None)
+            invalid.append(None)
+            continue
+        text = value.strip() if isinstance(value, str) else value
+        try:
+            number = float(text)
+        except (TypeError, ValueError):
+            number = None
+        if (number is None or not math.isfinite(number) or number < 0
+                or number != int(number)):
+            parsed.append(None)
+            invalid.append(str(value))
+            continue
+        parsed.append(int(number))
+        invalid.append(None)
+    return (pd.array(parsed, dtype="Int64"),
+            pd.Series(invalid, dtype="object"))
+
+
+def _attach_volume(frame, raw_values):
+    """Set `volume` and `volume_invalid_text` on a reader frame."""
+    if raw_values is None:
+        frame["volume"] = pd.array([None] * len(frame), dtype="Int64")
+        frame["volume_invalid_text"] = pd.Series([None] * len(frame),
+                                                 dtype="object")
+        return
+    if pd.api.types.is_integer_dtype(raw_values.dtype):
+        # Fast path for large integer columns: only negatives can be invalid.
+        volume = raw_values.astype("Int64").reset_index(drop=True)
+        negative = (volume < 0).fillna(False)
+        invalid = pd.Series([None] * len(volume), dtype="object")
+        invalid[negative.values] = volume[negative].astype(str).values
+        volume = volume.mask(negative)
+        frame["volume"] = volume.values
+        frame["volume_invalid_text"] = invalid.values
+        return
+    volume, invalid = parse_volume_values(list(raw_values))
+    frame["volume"] = volume
+    frame["volume_invalid_text"] = invalid.values
 
 
 def most_common_within_day_step_seconds(ts_values):
@@ -213,9 +263,7 @@ def _read_r1_r4_parquet(path):
         "low": raw[price_map["low"]].astype("float64"),
         "close": raw[price_map["close"]].astype("float64"),
     })
-    frame["volume"] = (_to_nullable_volume(raw[volume_col])
-                       if volume_col is not None else pd.array([None] * len(raw),
-                                                               dtype="Int64"))
+    _attach_volume(frame, raw[volume_col] if volume_col is not None else None)
     frame["source_row"] = range(1, len(frame) + 1)
     return frame, ignored, file_name
 
@@ -282,16 +330,8 @@ def read_r2(path):
         raise FileImportError(
             "%s contains a non-numeric price value (%s). The file was not "
             "imported." % (file_name, exc), check_code="V-FILE-01")
-    if volume_col is not None:
-        try:
-            frame["volume"] = _to_nullable_volume(
-                pd.to_numeric(raw[volume_col], errors="raise"))
-        except (TypeError, ValueError) as exc:
-            raise FileImportError(
-                "%s contains a non-numeric volume value (%s). The file was "
-                "not imported." % (file_name, exc), check_code="V-FILE-01")
-    else:
-        frame["volume"] = pd.array([None] * len(raw), dtype="Int64")
+    # Volume problems are row-level (V-VOL-01), never a whole-file failure.
+    _attach_volume(frame, raw[volume_col] if volume_col is not None else None)
     frame["source_row"] = range(1, len(frame) + 1)
 
     suspect_days = _check_one_minute_resolution(frame, file_name)
@@ -330,15 +370,15 @@ def read_r3(path):
         trade_date = _parse_iso_date(fields[0], file_name, line_no)
         try:
             prices = [float(value) for value in fields[1:5]]
-            volume = int(fields[5])
         except ValueError:
             raise FileImportError(
-                "%s line %d: a price or volume value is not a number. "
+                "%s line %d: a price value is not a number. "
                 "The file was not imported." % (file_name, line_no),
                 check_code="V-FILE-01")
+        # Volume text is kept raw here and checked row by row (V-VOL-01).
         # Field 7 (fields[6]) is read and ignored per D-01/D-02.
         rows.append((trade_date, prices[0], prices[1], prices[2], prices[3],
-                     volume, line_no))
+                     fields[5], line_no))
 
     if not rows:
         raise FileImportError(
@@ -347,7 +387,10 @@ def read_r3(path):
 
     frame = pd.DataFrame(rows, columns=["trade_date", "open", "high", "low",
                                         "close", "volume", "source_row"])
-    frame["volume"] = frame["volume"].astype("Int64")
+    raw_volume = frame.pop("volume")
+    _attach_volume(frame, raw_volume)
+    frame = frame[["trade_date", "open", "high", "low", "close", "volume",
+                   "volume_invalid_text", "source_row"]]
     seven_field_lines = sum(1 for line in raw_lines
                             if line.strip() and len(line.split(",")) == 7)
     notes = []
@@ -370,7 +413,9 @@ def read_r4(path):
         "trade_date": frame["ts"].dt.date,
         "open": frame["open"], "high": frame["high"],
         "low": frame["low"], "close": frame["close"],
-        "volume": frame["volume"], "source_row": frame["source_row"],
+        "volume": frame["volume"],
+        "volume_invalid_text": frame["volume_invalid_text"],
+        "source_row": frame["source_row"],
     })
     return ReaderResult(READER_R4, False, daily, ignored_columns=ignored)
 

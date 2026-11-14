@@ -115,10 +115,32 @@ def _quarantine(frame, mask, reason, store):
         return frame, store
     taken["reason_code"] = reason
     keep = [c for c in ("ts", "trade_date", "open", "high", "low", "close",
-                        "volume", "source_row", "reason_code")
+                        "volume", "volume_invalid_text", "source_row",
+                        "reason_code")
             if c in taken.columns]
-    store = pd.concat([store, taken[keep]], ignore_index=True)
+    if len(store) == 0:
+        # Concatenating onto an empty store is deprecated in pandas and could
+        # change result dtypes; start the store from the taken rows instead.
+        store = taken[keep].reset_index(drop=True)
+    else:
+        store = pd.concat([store, taken[keep]], ignore_index=True)
     return frame.loc[~mask].copy(), store
+
+
+def _bad_volume_mask(frame):
+    """V-VOL-01: volume that is non-numeric, fractional or negative is
+    impossible. The reader marks such rows with the original text; a negative
+    number arriving by another path is caught by the sign test. A genuinely
+    missing volume is not an issue (V-VOL-02, D-03)."""
+    mask = frame["volume"].notna() & (frame["volume"] < 0)
+    if "volume_invalid_text" in frame.columns:
+        mask = mask | frame["volume_invalid_text"].notna()
+    return mask.fillna(False).astype(bool)
+
+
+def _drop_reader_only_columns(frame):
+    """The invalid-volume evidence column belongs to quarantine only."""
+    return frame.drop(columns=["volume_invalid_text"], errors="ignore")
 
 
 # --- Main logic: intraday row validation ------------------------------------------
@@ -136,8 +158,8 @@ def validate_intraday(standardised, instrument_id, tick_rules=None):
     frame, quarantine = _quarantine(frame, _bad_price_mask(frame),
                                     REASON_BAD_PRICE, quarantine)
 
-    # V-VOL-01: negative volume is impossible.
-    volume_bad = frame["volume"].notna() & (frame["volume"] < 0)
+    # V-VOL-01: negative, fractional or non-numeric volume is impossible.
+    volume_bad = _bad_volume_mask(frame)
     frame, quarantine = _quarantine(frame, volume_bad, REASON_BAD_VOLUME,
                                     quarantine)
 
@@ -230,7 +252,7 @@ def validate_intraday(standardised, instrument_id, tick_rules=None):
     if frame["ts"].duplicated().any():
         raise AssertionError("duplicate (instrument, ts) key after "
                              "standardisation of %s" % instrument_id)
-    return frame, quarantine, issues
+    return _drop_reader_only_columns(frame), quarantine, issues
 
 
 def _flag_constant_step_runs(frame):
@@ -282,7 +304,7 @@ def validate_daily(standardised, instrument_id):
                                     REASON_INVALID_OHLC, quarantine)
     frame, quarantine = _quarantine(frame, _bad_price_mask(frame),
                                     REASON_BAD_PRICE, quarantine)
-    volume_bad = frame["volume"].notna() & (frame["volume"] < 0)
+    volume_bad = _bad_volume_mask(frame)
     frame, quarantine = _quarantine(frame, volume_bad, REASON_BAD_VOLUME,
                                     quarantine)
     frame = frame.sort_values("trade_date").reset_index(drop=True)
@@ -319,7 +341,7 @@ def validate_daily(standardised, instrument_id):
     if frame["trade_date"].duplicated().any():
         raise AssertionError("duplicate (instrument, trade_date) key after "
                              "standardisation of %s" % instrument_id)
-    return frame, quarantine, issues
+    return _drop_reader_only_columns(frame), quarantine, issues
 
 
 # --- Main logic: intraday completeness (day profiles) ------------------------------
