@@ -104,5 +104,18 @@ class TestCatalogueBackupNames(unittest.TestCase):
             "qmap_catalogue_02_Dec_26_090000.duckdb"])
 
 
+    def test_unrelated_files_and_folders_are_ignored(self):
+        folder = support.new_temp_folder("bkp_filter")
+        genuine = ["qmap_catalogue_14_Nov_26_104029.duckdb",
+                   "qmap_catalogue_30_Nov_26_235959.duckdb"]
+        for name in genuine + ["notes.txt", "zzz_latest.duckdb",
+                               "qmap_catalogue_02_Dec_26_090000.duckdb.tmp"]:
+            open(os.path.join(folder, name), "w").close()
+        # A folder named exactly like a newer backup must not count either.
+        os.makedirs(os.path.join(folder,
+                                 "qmap_catalogue_31_Dec_26_090000.duckdb"))
+        self.assertEqual(storage.latest_catalogue_backups(folder, 10), genuine)
+
+
 if __name__ == "__main__":
     unittest.main()

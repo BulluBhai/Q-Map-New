@@ -255,10 +255,15 @@ def catalogue_backup_sort_key(name):
 
 
 def latest_catalogue_backups(backup_folder, count):
-    """The newest `count` backup file names, oldest first."""
+    """The newest `count` backup file names, oldest first. Only regular
+    files named like a Q-MAP catalogue backup count; any other file or
+    folder in the backup folder is ignored."""
     if not os.path.isdir(backup_folder):
         return []
-    names = sorted(os.listdir(backup_folder), key=catalogue_backup_sort_key)
+    names = sorted((name for name in os.listdir(backup_folder)
+                    if _BACKUP_NAME.match(name) and os.path.isfile(
+                        os.path.join(backup_folder, name))),
+                   key=catalogue_backup_sort_key)
     return names[-count:] if count else []
 
 
