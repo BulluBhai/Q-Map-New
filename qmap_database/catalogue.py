@@ -261,14 +261,20 @@ class Catalogue:
 
     # --- issues ------------------------------------------------------------------
     def add_issue(self, issue, dataset_id, instrument_id, run_id):
-        """Insert an IssueRecord; re-raising the same open issue on a later run
-        only moves last_seen_run instead of duplicating it."""
+        """Insert an IssueRecord; re-raising the same issue on a later run
+        only moves last_seen_run instead of duplicating it.
+
+        An occurrence the Owner already marked VERIFIED_OK is the same issue
+        when its description (which carries the date and the percentages) is
+        identical: the Owner's decision stands and no new blocking issue is
+        opened (G-03). Changed source values give a different description and
+        therefore a new OPEN issue."""
         existing = self.con.execute(
             "SELECT issue_id FROM data_issue WHERE dataset_id IS NOT DISTINCT "
             "FROM ? AND instrument_id IS NOT DISTINCT FROM ? AND check_code = ? "
-            "AND description = ? AND status IN (?, ?)",
+            "AND description = ? AND status IN (?, ?, ?)",
             [dataset_id, instrument_id, issue.check_code, issue.description,
-             ISSUE_OPEN, ISSUE_ACKNOWLEDGED]).fetchone()
+             ISSUE_OPEN, ISSUE_ACKNOWLEDGED, ISSUE_VERIFIED_OK]).fetchone()
         if existing:
             self.con.execute(
                 "UPDATE data_issue SET last_seen_run = ? WHERE issue_id = ?",
@@ -283,6 +289,14 @@ class Catalogue:
              issue.evidence, issue.affects_continuity, ISSUE_OPEN, run_id,
              run_id])
         return issue_id
+
+    def continuity_issues_awaiting_owner(self):
+        """Open issues that block continuity (G-03), for the Owner's review:
+        (issue_id, instrument_id, ts_from, check_code, description)."""
+        return self.con.execute(
+            "SELECT issue_id, instrument_id, ts_from, check_code, description "
+            "FROM data_issue WHERE affects_continuity AND status = ? "
+            "ORDER BY instrument_id, ts_from", [ISSUE_OPEN]).fetchall()
 
     def mark_issue_verified_ok(self, issue_id, user_note=""):
         """G-03: the Owner, after personally verifying an occurrence, marks it
